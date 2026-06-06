@@ -3,6 +3,7 @@
     "description": "A transparent expression & rule evaluator in pure PHP. No dependencies. Strict typing, a safe mode that collects missing variables instead of failing, and an explain mode that shows exactly why a rule passed or failed. Move business logic out of your code.",
     "type": "library",
     "license": "MIT",
+    "homepage": "https://github.com/olivier-ls/php-ruler",
     "keywords": [
         "expression",
         "expression language",
@@ -17,7 +18,8 @@
     ],
     "authors": [
         {
-            "name": "Olivier",
+            "name": "Olivier Le Scour",
+            "email": "olivierl12.blabla@gmail.com",
             "role": "Developer"
         }
     ],
