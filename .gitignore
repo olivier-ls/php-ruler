@@ -1,0 +1,19 @@
+# Dependencies
+/vendor/
+
+# Composer — a library does not commit its lock file
+composer.lock
+
+# PHPUnit
+/.phpunit.cache/
+.phpunit.result.cache
+/coverage/
+
+# IDE / editors
+/.idea/
+/.vscode/
+*.sublime-*
+
+# OS noise
+.DS_Store
+Thumbs.db
