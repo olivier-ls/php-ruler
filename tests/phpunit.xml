@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
+         bootstrap="bootstrap.php"
+         colors="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerNotices="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         failOnRisky="true"
+         failOnWarning="true"
+         cacheDirectory=".phpunit.cache">
+
+    <testsuites>
+        <testsuite name="php-ruler">
+            <directory>.</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory>../src</directory>
+        </include>
+    </source>
+</phpunit>
