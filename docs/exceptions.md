@@ -1,50 +1,50 @@
-# Exceptions et erreurs
+# Exceptions and Errors
 
-## Vue d'ensemble
+## Overview
 
-La lib utilise une hiérarchie d'exceptions cohérente, toutes dérivées de `EvaluatorException` (elle-même dérivée de `\RuntimeException`). Ce design permet :
-- D'attraper toutes les erreurs de la lib avec un seul `catch (EvaluatorException $e)`
-- D'attraper précisément un type d'erreur (`UnknownVariableException`) quand on veut le gérer spécifiquement
-- De distinguer les erreurs de syntaxe (compile-time) des erreurs d'évaluation (runtime)
+The library uses a consistent exception hierarchy, all derived from `EvaluatorException` (itself derived from `\RuntimeException`). This design allows:
+- Catching all library errors with a single `catch (EvaluatorException $e)`
+- Catching a specific error type (`UnknownVariableException`) when you want to handle it explicitly
+- Distinguishing syntax errors (compile-time) from evaluation errors (runtime)
 
-Aucune méthode publique ne propage d'exception PHP brute (`\TypeError`, `\DivisionByZeroError`...). Toute exception levée par le code utilisateur (fonctions custom) est rewrappée en `TypeErrorException`.
+No public method propagates a raw PHP exception (`\TypeError`, `\DivisionByZeroError`...). Any exception thrown by user code (custom functions) is re-wrapped as `TypeErrorException`.
 
-## Hiérarchie
+## Hierarchy
 
 ```
 \RuntimeException
   └── EvaluatorException                  (base)
         ├── SyntaxErrorException          (lex/parse)
-        ├── TypeErrorException            (typage runtime)
-        ├── UnknownVariableException      (variable absente)
-        └── CircularContextException      (context circulaire en describe)
+        ├── TypeErrorException            (runtime typing)
+        ├── UnknownVariableException      (missing variable)
+        └── CircularContextException      (circular context in describe)
 ```
 
-Toutes les classes vivent dans le namespace `Ols\PhpRuler\Exception`.
+All classes live in the `Ols\PhpRuler\Exception` namespace.
 
 ## `EvaluatorException`
 
-**Classe de base** pour toutes les exceptions de la lib. Pas levée directement en pratique (toujours via une sous-classe), mais utile pour un catch-all.
+**Base class** for all library exceptions. Not thrown directly in practice (always via a subclass), but useful for a catch-all.
 
-Levée directement uniquement pour des cas d'AST corrompu ou de profondeur dépassée (où aucune des sous-classes plus précises ne s'applique) :
-- Profondeur d'évaluation dépassée (200 niveaux)
-- Nœud d'AST inconnu (corruption ou extension non implémentée)
-- Opérateur unaire/binaire inconnu (idem)
-- Fonction non enregistrée
+Thrown directly only for corrupted AST or depth-exceeded cases (where none of the more precise subclasses apply):
+- Evaluation depth exceeded (200 levels)
+- Unknown AST node (corruption or unimplemented extension)
+- Unknown unary/binary operator (same)
+- Unregistered function
 
 ```php
 try {
     $eval->evaluate($expression, $context);
 } catch (\Ols\PhpRuler\Exception\EvaluatorException $e) {
-    // Attrape tout : syntaxe, type, variable manquante, AST corrompu...
+    // Catches everything: syntax, type, missing variable, corrupted AST...
 }
 ```
 
 ## `SyntaxErrorException`
 
-Levée à la phase de **lex ou de parse**. C'est-à-dire **avant toute évaluation**.
+Thrown at the **lex or parse phase** — that is, **before any evaluation**.
 
-**Spécificité** : porte une propriété publique `$position` (int, en octets) indiquant l'offset dans la chaîne d'origine.
+**Distinguishing feature**: carries a public `$position` property (int, in bytes) indicating the offset in the original string.
 
 ```php
 final class SyntaxErrorException extends EvaluatorException
@@ -53,18 +53,18 @@ final class SyntaxErrorException extends EvaluatorException
 }
 ```
 
-Cas typiques :
-- Token inconnu (`'@'`, `'#'`, etc.)
-- Parenthèse non fermée, crochet déséquilibré
-- Opérande manquant après un opérateur (`'a + '`)
-- Littéral d'entier dépassant `PHP_INT_MAX` (ou `PHP_INT_MIN` non précédé d'un unaire `-`)
-- Littéral de float dépassant `PHP_FLOAT_MAX` (devient `INF` au cast, rejet immédiat)
-- Virgule trailing dans une liste (`[1, 2,]`)
-- Liste vide à droite d'`IN` (`x IN []`)
-- Scalaire à droite d'`IN` (`x IN 5`)
-- Token surplus en fin d'expression (`'a + b 5'`)
+Typical cases:
+- Unknown token (`'@'`, `'#'`, etc.)
+- Unclosed parenthesis, unbalanced bracket
+- Missing operand after an operator (`'a + '`)
+- Integer literal exceeding `PHP_INT_MAX` (or `PHP_INT_MIN` not preceded by a unary `-`)
+- Float literal exceeding `PHP_FLOAT_MAX` (becomes `INF` on cast, immediately rejected)
+- Trailing comma in a list (`[1, 2,]`)
+- Empty list on the right of `IN` (`x IN []`)
+- Scalar on the right of `IN` (`x IN 5`)
+- Surplus token at the end of the expression (`'a + b 5'`)
 
-**Exemple** :
+**Example**:
 ```php
 try {
     $eval->evaluate('a + ', $context);
@@ -74,35 +74,35 @@ try {
 }
 ```
 
-**Quand interpréter** :
-- En backoffice : remonter le message + position à l'utilisateur pour l'aider à corriger sa règle
-- Côté code : indique un bug de la chaîne fournie, pas du contexte. Re-fournir le même contexte ne corrigera pas le problème.
+**How to handle**:
+- In a back-office: surface the message + position to the user to help them correct their rule
+- In code: indicates a bug in the provided string, not in the context. Re-providing the same context will not fix the problem.
 
-### `validate()` ne renvoie que ce type
+### `validate()` only throws this type
 
-`ExpressionEvaluator::validate($expression)` lève uniquement `SyntaxErrorException` (ou pas d'exception du tout). Pas de vérification sémantique (variables, fonctions, types) à ce niveau.
+`ExpressionEvaluator::validate($expression)` throws only `SyntaxErrorException` (or no exception at all). No semantic validation (variables, functions, types) at this level.
 
 ## `TypeErrorException`
 
-Levée à **l'évaluation**, quand une opération rencontre un type incompatible.
+Thrown **at evaluation time**, when an operation encounters an incompatible type.
 
-Cas couverts (liste non exhaustive) :
-- Opérateur logique AND/OR/NOT/ternaire avec opérande non-bool (`5 AND true`)
-- Arithmétique avec opérande non-numérique (`null + 1`, `'5' * 2`)
-- Comparaison de types incompatibles (`'a' > 5`)
-- Égalité directe sur arrays (`[1,2] = [1,2]`) — utiliser `IN`
-- Apparition de NaN ou INF dans le pipeline
-- Division par zéro (`1 / 0`)
-- Overflow d'entier (`PHP_INT_MAX + 1` produirait un downcast en float, rejet)
-- `evaluateBoolean()` avec résultat non-bool
-- `evaluateNumeric()` avec résultat non-numérique
-- Fonction appelée avec mauvaise arity
-- Fonction custom levant un `\Throwable` non-lib (encapsulé avec `previous`)
-- Type non supporté dans le contexte (objet, closure, ressource...)
-- Format de date invalide passé aux fonctions de dates
-- Contraintes d'arguments de fonctions builtins (par ex. `clamp` avec `min > max`)
+Covered cases (non-exhaustive list):
+- Logical AND/OR/NOT/ternary operator with a non-bool operand (`5 AND true`)
+- Arithmetic with a non-numeric operand (`null + 1`, `'5' * 2`)
+- Comparison of incompatible types (`'a' > 5`)
+- Direct equality on arrays (`[1,2] = [1,2]`) — use `IN`
+- NaN or INF appearing in the pipeline
+- Division by zero (`1 / 0`)
+- Integer overflow (`PHP_INT_MAX + 1` would downcast to float, rejected)
+- `evaluateBoolean()` with a non-bool result
+- `evaluateNumeric()` with a non-numeric result
+- Function called with wrong arity
+- Custom function throwing a non-library `\Throwable` (wrapped with `previous`)
+- Unsupported type in the context (object, closure, resource...)
+- Invalid date format passed to date functions
+- Built-in function argument constraints (e.g. `clamp` with `min > max`)
 
-**Caractéristique partagée** : c'est presque toujours un **problème de typage logique** dans l'expression ou les données. Le caller doit corriger l'expression ou nettoyer son contexte.
+**Shared characteristic**: this is almost always a **logical typing problem** in the expression or the data. The caller must fix the expression or clean up its context.
 
 ```php
 try {
@@ -113,9 +113,9 @@ try {
 }
 ```
 
-### Chaînage via `previous`
+### Chaining via `previous`
 
-Quand une fonction custom lève un `\Throwable` non-lib, l'exception originelle est conservée dans `$e->getPrevious()` :
+When a custom function throws a non-library `\Throwable`, the original exception is preserved in `$e->getPrevious()`:
 
 ```php
 $eval->registerFunction('boom', fn() => throw new \RuntimeException('boom'));
@@ -123,22 +123,22 @@ try {
     $eval->evaluate('boom()', []);
 } catch (\Ols\PhpRuler\Exception\TypeErrorException $e) {
     echo $e->getMessage();              // 'Error in function "boom": boom'
-    echo $e->getPrevious()->getMessage(); // 'boom'  ← l'originale
+    echo $e->getPrevious()->getMessage(); // 'boom'  ← the original
 }
 ```
 
-C'est utile pour le debug : on peut tracer la cause racine sans perdre le message wrappé pour l'API utilisateur.
+This is useful for debugging: the root cause can be traced without losing the wrapped message for the API consumer.
 
 ## `UnknownVariableException`
 
-Levée quand une variable référencée n'existe pas dans le contexte.
+Thrown when a referenced variable does not exist in the context.
 
-**Propriété structurée** : expose `public readonly string $variablePath` — le chemin exact demandé (tel qu'écrit dans l'expression). Utile pour du logging ou de l'affichage backoffice sans avoir à parser le message texte.
+**Structured property**: exposes `public readonly string $variablePath` — the exact path as requested (as written in the expression). Useful for logging or back-office display without having to parse the text message.
 
-**Message** : indique le chemin demandé. Si la résolution a échoué après avoir traversé au moins un segment, indique le segment fautif :
+**Message**: indicates the requested path. If resolution failed after traversing at least one segment, indicates the failing segment:
 
-- `'Unknown variable: "customer"'` — racine absente
-- `'Unknown variable: "cart.shipping" (failed at "cart.shipping")'` — `cart` existe mais pas `cart.shipping`
+- `'Unknown variable: "customer"'` — absent root
+- `'Unknown variable: "cart.shipping" (failed at "cart.shipping")'` — `cart` exists but `cart.shipping` does not
 
 ```php
 try {
@@ -150,20 +150,20 @@ try {
 }
 ```
 
-### Captée et collectée par les modes safe / explain
+### Caught and collected by safe / explain modes
 
-- `evaluateSafe()` : attrape ces exceptions et collecte les chemins dans `SafeResult::missingVars`
-- `ExpressionExplainer::explain()` : capture en `ExplainStatus::MISSING` avec le message dans `detail`
+- `evaluateSafe()`: catches these exceptions and collects the paths in `SafeResult::missingVars`
+- `ExpressionExplainer::explain()`: captures them as `ExplainStatus::MISSING` with the message in `detail`
 
-Toutes les autres exceptions (`TypeErrorException`, `EvaluatorException`...) traversent ces deux modes **inchangées**.
+All other exceptions (`TypeErrorException`, `EvaluatorException`...) pass through both modes **unchanged**.
 
-**Cas particulier** : une `UnknownVariableException` levée **depuis le corps d'une fonction custom** (par exemple si la fonction appelle `getContextValue('x', [])`) n'est pas convertie en "missing" par le mode safe — voir `functions.md` et `evaluate-safe.md`.
+**Special case**: an `UnknownVariableException` thrown **from inside a custom function** body (e.g. if the function calls `getContextValue('x', [])`) is not converted to "missing" by safe mode — see `functions.md` and `evaluate-safe.md`.
 
 ## `CircularContextException`
 
-Spécifique à `describeContext()` (et à `ContextResolver::describe`). Levée quand la structure du contexte dépasse `MAX_DEPTH = 64` niveaux d'imbrication.
+Specific to `describeContext()` (and `ContextResolver::describe`). Thrown when the context structure exceeds `MAX_DEPTH = 64` nesting levels.
 
-En pratique, signale presque toujours une **référence circulaire** :
+In practice, this almost always signals a **circular reference**:
 
 ```php
 $ctx = ['data' => 'x'];
@@ -173,117 +173,117 @@ $eval->describeContext($ctx);
 // CircularContextException: 'Context nesting exceeds 64 levels at "self.self.self..."'
 ```
 
-**Pas levée par `evaluate()` ni `getContextValue()`** : ces méthodes font une descente bornée par le chemin demandé (par exemple 3 segments pour `a.b.c`), pas une exploration complète. Elles n'exposent pas au risque de cycle.
+**Not thrown by `evaluate()` or `getContextValue()`**: these methods perform a descent bounded by the requested path (e.g. 3 segments for `a.b.c`), not a full exploration. They are not exposed to cycle risk.
 
-## Politique de propagation
+## Propagation policy
 
-### Quelles exceptions sortent de quelle méthode
+### Which exceptions come out of which method
 
-| Méthode | Exceptions possibles |
+| Method | Possible exceptions |
 |---|---|
-| `evaluate(string)` | Toutes : `SyntaxErrorException`, `TypeErrorException`, `UnknownVariableException`, `EvaluatorException` |
-| `evaluateAst(Node)` | Pas de `SyntaxErrorException` (déjà parsé) ; autres possibles |
-| `evaluateBoolean()` / `evaluateNumeric()` | Tout ce qu'`evaluate()` peut lever + `TypeErrorException` si type final inattendu |
-| `evaluateSafe(string)` | `SyntaxErrorException`, `TypeErrorException`, `EvaluatorException`. **Pas** `UnknownVariableException` (collectée). |
-| `evaluateSafeAst(Node)` | Idem `evaluateSafe()` sans `SyntaxErrorException`. |
-| `validate()` | `SyntaxErrorException` uniquement. |
-| `getAst()` | `SyntaxErrorException` uniquement (pas d'évaluation). |
-| `exportAst()` | Idem `getAst()`. |
-| `importAst()` | `\InvalidArgumentException` (struct corrompue / cycle / profondeur). Pas `SyntaxError` (rien à parser). |
-| `getContextValue()` | `UnknownVariableException` uniquement. |
-| `getContextValueOrDefault()` | Aucune (renvoie le défaut). |
-| `hasContextValue()` | Aucune (renvoie `false`). |
+| `evaluate(string)` | All: `SyntaxErrorException`, `TypeErrorException`, `UnknownVariableException`, `EvaluatorException` |
+| `evaluateAst(Node)` | No `SyntaxErrorException` (already parsed); others possible |
+| `evaluateBoolean()` / `evaluateNumeric()` | Everything `evaluate()` can throw + `TypeErrorException` if final type is unexpected |
+| `evaluateSafe(string)` | `SyntaxErrorException`, `TypeErrorException`, `EvaluatorException`. **Not** `UnknownVariableException` (collected). |
+| `evaluateSafeAst(Node)` | Same as `evaluateSafe()` without `SyntaxErrorException`. |
+| `validate()` | `SyntaxErrorException` only. |
+| `getAst()` | `SyntaxErrorException` only (no evaluation). |
+| `exportAst()` | Same as `getAst()`. |
+| `importAst()` | `\InvalidArgumentException` (corrupted struct / cycle / depth). No `SyntaxError` (nothing to parse). |
+| `getContextValue()` | `UnknownVariableException` only. |
+| `getContextValueOrDefault()` | None (returns the default). |
+| `hasContextValue()` | None (returns `false`). |
 | `describeContext()` | `CircularContextException` possible. |
-| `registerFunction()` | Aucune (la signature est introspectée mais pas appelée). |
-| `getFunctions()` | Aucune. |
-| `callFunction()` | `EvaluatorException` (fonction inconnue), `TypeErrorException` (arity ou type interne). |
-| `extractVariables()`, `extractFunctions()` | `SyntaxErrorException` uniquement. |
-| `ExpressionExplainer::explain()` | `SyntaxErrorException` ou `EvaluatorException` structurel uniquement. **Pas** missing/type errors d'évaluation (ils deviennent des nœuds `MISSING`/`ERROR`). |
-| `AliasResolver::add()` | `\InvalidArgumentException` (validation des alias). |
-| `AliasResolver::humanToExpression()` / `expressionToHuman()` | `\InvalidArgumentException` si UTF-8 invalide. |
+| `registerFunction()` | None (the signature is introspected but not called). |
+| `getFunctions()` | None. |
+| `callFunction()` | `EvaluatorException` (unknown function), `TypeErrorException` (arity or internal type). |
+| `extractVariables()`, `extractFunctions()` | `SyntaxErrorException` only. |
+| `ExpressionExplainer::explain()` | `SyntaxErrorException` or structural `EvaluatorException` only. **Not** missing/type evaluation errors (they become `MISSING`/`ERROR` nodes). |
+| `AliasResolver::add()` | `\InvalidArgumentException` (alias validation). |
+| `AliasResolver::humanToExpression()` / `expressionToHuman()` | `\InvalidArgumentException` on invalid UTF-8. |
 
-### Garanties globales
+### Global guarantees
 
-1. **Aucune exception PHP brute ne sort des méthodes publiques** (sauf `\InvalidArgumentException` documentée dans `importAst()` et `AliasResolver`, et `\LogicException` documentée dans `SafeResult::getValue()`).
+1. **No raw PHP exception exits public methods** (except `\InvalidArgumentException` documented in `importAst()` and `AliasResolver`, and `\LogicException` documented in `SafeResult::getValue()`).
 
-2. **Les exceptions de la lib transitent inchangées à travers les fonctions custom** : si une fonction custom appelle `evaluate()` en interne et que ça lève `UnknownVariableException`, ça remonte sans wrapping.
+2. **Library exceptions pass through custom functions unchanged**: if a custom function calls `evaluate()` internally and it throws `UnknownVariableException`, it propagates without wrapping.
 
-3. **Les exceptions hors lib levées par des fonctions custom sont wrappées en `TypeErrorException`** avec `previous` pointant sur l'originale.
+3. **Non-library exceptions thrown by custom functions are wrapped as `TypeErrorException`** with `previous` pointing to the original.
 
-4. **Les comptes de récursion sont remis à zéro sur exception** : un appel en échec ne laisse pas l'évaluateur dans un état incohérent.
+4. **Recursion counters are reset on exception**: a failed call does not leave the evaluator in an inconsistent state.
 
-## Exceptions hors hiérarchie
+## Exceptions outside the hierarchy
 
-Trois exceptions ne dérivent pas d'`EvaluatorException` :
+Three exceptions do not derive from `EvaluatorException`:
 
 ### `\InvalidArgumentException`
 
-Levée par :
-- `importAst()` quand la chaîne sérialisée est corrompue, contient une classe non autorisée, un cycle ou dépasse la profondeur
-- `AliasResolver::add()` quand l'alias viole une règle de validation
-- `AliasResolver::humanToExpression()` / `expressionToHuman()` sur UTF-8 invalide
+Thrown by:
+- `importAst()` when the serialized string is corrupted, contains an unauthorized class, a cycle, or exceeds the depth limit
+- `AliasResolver::add()` when the alias violates a validation rule
+- `AliasResolver::humanToExpression()` / `expressionToHuman()` on invalid UTF-8
 
-Justification : ce sont des erreurs d'**API usage** (paramètres invalides côté caller), pas des erreurs d'évaluation à proprement parler. Cohérent avec la convention PHP standard.
+Rationale: these are **API usage errors** (invalid parameters on the caller side), not evaluation errors per se. Consistent with the standard PHP convention.
 
 ### `\LogicException`
 
-Levée par :
-- `SafeResult::getValue()` quand `success === false`
+Thrown by:
+- `SafeResult::getValue()` when `success === false`
 
-Justification : c'est une erreur de **programmation côté caller** (oubli de vérifier `success` avant d'accéder à `value`). Pas une condition runtime imprévisible — d'où `LogicException` plutôt qu'une exception runtime.
+Rationale: this is a **programming error on the caller side** (forgetting to check `success` before accessing `value`). Not an unpredictable runtime condition — hence `LogicException` rather than a runtime exception.
 
-## Décisions de design
+## Design decisions
 
 ### Base `\RuntimeException`
 
-`EvaluatorException` dérive de `\RuntimeException`, pas de `\Exception` directement. Convention PHP : les exceptions liées à l'état runtime (par opposition aux erreurs de programmation, `\LogicException`) dérivent de `\RuntimeException`.
+`EvaluatorException` derives from `\RuntimeException`, not `\Exception` directly. PHP convention: exceptions related to runtime state (as opposed to programming errors, `\LogicException`) derive from `\RuntimeException`.
 
-### Pas de codes d'erreur numériques
+### No numeric error codes
 
-Aucune exception n'utilise le `$code` du constructeur d'`\Exception`. Le message texte est la source d'info. Si une intégration externe a besoin de distinguer programmatiquement, elle peut utiliser le **type** d'exception (`instanceof`) — qui est plus typé et plus refactor-friendly que des codes magiques.
+No exception uses the `$code` constructor parameter of `\Exception`. The text message is the source of information. If an external integration needs to distinguish programmatically, it can use the **exception type** (`instanceof`) — which is more type-safe and refactor-friendly than magic codes.
 
-### Granularité moyenne
+### Medium granularity
 
-La hiérarchie a 4 sous-classes (au-delà de la base). Choix d'équilibre :
-- Suffisamment granulaire pour distinguer les cas "data" (`UnknownVariableException`), "logic" (`TypeErrorException`), "syntax" (`SyntaxErrorException`), "context" (`CircularContextException`)
-- Pas trop pour éviter une explosion de catch (`AndOperatorException`, `OrOperatorException`...). Quand plusieurs cas partagent la même intention (problème de typage), une seule exception suffit, le message texte précise.
+The hierarchy has 4 subclasses (beyond the base). A balanced choice:
+- Granular enough to distinguish "data" cases (`UnknownVariableException`), "logic" cases (`TypeErrorException`), "syntax" cases (`SyntaxErrorException`), "context" cases (`CircularContextException`)
+- Not too granular to avoid an explosion of catch clauses (`AndOperatorException`, `OrOperatorException`...). When multiple cases share the same intent (typing problem), a single exception suffices — the text message gives the specifics.
 
-### Messages auto-suffisants
+### Self-contained messages
 
-Les messages incluent le contexte nécessaire à l'utilisateur :
-- Chemin de la variable (`UnknownVariableException`)
-- Position dans l'expression (`SyntaxErrorException`)
-- Nom de l'opérateur et types observés (`TypeErrorException`)
-- Suggestion d'action quand pertinent (`Use an explicit comparison...`)
+Messages include the context necessary for the user:
+- Variable path (`UnknownVariableException`)
+- Position in the expression (`SyntaxErrorException`)
+- Operator name and observed types (`TypeErrorException`)
+- Suggested action where relevant (`Use an explicit comparison...`)
 
-C'est pour permettre à un backoffice d'afficher le message brut à l'utilisateur sans traduction supplémentaire.
+This allows a back-office to display the raw message to the user without additional translation.
 
-### Politique uniforme pour les fonctions custom
+### Uniform policy for custom functions
 
-Toute erreur dans une fonction custom :
-- soit elle est de la hiérarchie lib → propagée tel quel
-- soit elle est autre → wrappée en `TypeErrorException` avec préfixe `Error in function "..."` et `previous` peuplée
+Any error in a custom function:
+- If it belongs to the library hierarchy → propagated as-is
+- Otherwise → wrapped in `TypeErrorException` with the prefix `Error in function "..."` and `previous` populated
 
-Aucune exception PHP brute ne fuit. Le contrat d'API est uniforme.
+No raw PHP exception leaks. The API contract is uniform.
 
-### Pas d'exception "recovery"
+### No "recovery" exception
 
-La lib ne définit pas d'exception "recoverable" vs "non recoverable". C'est au caller d'attraper ce qu'il sait gérer. Le typage de la hiérarchie est l'outil principal de discrimination.
+The library does not define "recoverable" vs "non-recoverable" exceptions. It is up to the caller to catch what it knows how to handle. The type hierarchy is the primary discrimination tool.
 
-## Limitations connues
+## Known limitations
 
-### Pas de localization des messages
+### No message localization
 
-Les messages sont en **anglais**, intentionnellement. Pas de mécanisme i18n intégré. Ce choix est définitif pour la lib elle-même.
+Messages are in **English**, intentionally. No built-in i18n mechanism. This choice is final for the library itself.
 
-Le point d'extension recommandé pour un backoffice qui a besoin de ses propres messages : utiliser le **type d'exception** (`instanceof`) et les **propriétés structurées** (ex. `$variablePath` sur `UnknownVariableException`, `$position` sur `SyntaxErrorException`) pour composer un message localisé côté appelant, sans parser le texte libre.
+The recommended extension point for a back-office that needs its own messages: use the **exception type** (`instanceof`) and the **structured properties** (e.g. `$variablePath` on `UnknownVariableException`, `$position` on `SyntaxErrorException`) to compose a localized message on the caller side, without parsing the free-text message.
 
-### Structured details : partiels
+### Partially structured details
 
-Les exceptions les plus utiles exposent déjà des propriétés publiques typées : `UnknownVariableException::$variablePath` et `SyntaxErrorException::$position`. Inutile de parser le texte du message pour ces deux cas.
+The most useful exceptions already expose typed public properties: `UnknownVariableException::$variablePath` and `SyntaxErrorException::$position`. No need to parse the message text for these two cases.
 
-En revanche, les autres exceptions (`TypeErrorException` notamment) restent du texte libre : distinguer programmatiquement "division par zéro" d'un "type incompatible" demande encore un pattern-match sur le message (voir ci-dessous).
+However, other exceptions (`TypeErrorException` in particular) remain free-text: programmatically distinguishing "division by zero" from "incompatible type" still requires pattern-matching on the message.
 
-### `TypeErrorException` un peu fourre-tout
+### `TypeErrorException` is somewhat of a catch-all
 
-Le type couvre beaucoup de cas (arithmétique, comparaison, fonction custom...). Un caller qui veut distinguer "division par zéro" de "type incompatible" doit pattern-matcher le message. Comportement actuel acceptable mais perfectible.
+The type covers many cases (arithmetic, comparison, custom functions...). A caller wanting to distinguish "division by zero" from "incompatible type" must pattern-match the message. Current behavior is acceptable but could be improved.

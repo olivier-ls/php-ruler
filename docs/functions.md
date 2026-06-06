@@ -1,281 +1,281 @@
-# Fonctions
+# Functions
 
-## Vue d'ensemble
+## Overview
 
-La lib expose un système d'appel de fonctions dans les expressions. Deux catégories :
-- **Fonctions built-in** : enregistrées automatiquement par l'évaluateur (arithmétique, dates, chaînes, listes, casting de types…)
-- **Fonctions custom** : enregistrées dynamiquement via `registerFunction()` à l'initialisation
+The library exposes a function call system within expressions. Two categories:
+- **Built-in functions**: automatically registered by the evaluator (arithmetic, dates, strings, lists, type casting...)
+- **Custom functions**: dynamically registered via `registerFunction()` at initialization
 
-Toutes les fonctions partagent la même mécanique d'appel et la même politique de gestion d'erreurs : du point de vue d'une expression, un built-in et un custom sont indistinguables.
+All functions share the same call mechanics and the same error-handling policy: from an expression's perspective, a built-in and a custom function are indistinguishable.
 
 ## API
 
 ```php
 public function registerFunction(string $name, callable $fn): self
-public function getFunctions(): array          // string[], trié
+public function getFunctions(): array          // string[], sorted
 public function callFunction(string $name, array $resolvedArgs): mixed
 ```
 
-## Comportements généraux
+## General behaviors
 
 ### `registerFunction(string $name, callable $fn): self`
 
-Enregistre une fonction sous le nom donné. **Écrase silencieusement** une fonction existante du même nom, qu'elle soit built-in ou précédemment custom. C'est délibéré : on peut spécialiser `round()` ou `today()` pour un projet sans toucher au code de la lib.
+Registers a function under the given name. **Silently overwrites** an existing function of the same name, whether built-in or previously custom. This is intentional: you can specialize `round()` or `today()` for a project without touching the library code.
 
 ```php
 $eval->registerFunction('greet', fn(string $name): string => "Hello, $name!");
 $eval->evaluate('greet(user.name)', ['user' => ['name' => 'Alice']]);
 // → "Hello, Alice!"
 
-// Override d'un built-in :
-$eval->registerFunction('today', fn(): string => '2026-01-01');  // pour tests
+// Overriding a built-in:
+$eval->registerFunction('today', fn(): string => '2026-01-01');  // for tests
 ```
 
-**Arity capturée à l'enregistrement** : via réflexion, la lib stocke `min` (paramètres requis) et `max` (total des paramètres, ou `PHP_INT_MAX` si variadique). Cette arity est validée à chaque appel — pas de réflexion à runtime.
+**Arity captured at registration**: via reflection, the library stores `min` (required parameters) and `max` (total parameters, or `PHP_INT_MAX` if variadic). This arity is validated on every call — no runtime reflection.
 
 ### `getFunctions(): string[]`
 
-Retourne la liste des noms de fonctions enregistrées (built-in + custom), triée alphabétiquement.
+Returns the list of registered function names (built-in + custom), sorted alphabetically.
 
 ```php
 $eval->getFunctions();
 // ['abs', 'avg', 'bool', 'ceil', 'clamp', 'coalesce', 'concat', 'contains', ...]
 ```
 
-Utile pour la validation d'expressions utilisateur en backoffice (avant évaluation), ou pour l'autocomplétion d'éditeurs.
+Useful for validating user expressions in a back-office (before evaluation), or for editor autocompletion.
 
 ### `callFunction(string $name, array $resolvedArgs): mixed`
 
-Appelle une fonction par son nom avec des arguments **déjà résolus** (valeurs PHP, pas des nœuds d'AST).
+Calls a function by name with **already-resolved** arguments (PHP values, not AST nodes).
 
-Cette méthode est exposée principalement pour l'`ExpressionExplainer` : elle évite la double évaluation des arguments quand on a déjà tracé les valeurs intermédiaires. Pour l'usage courant, c'est l'évaluation de `FunctionNode` qui s'en charge en interne.
+This method is exposed primarily for the `ExpressionExplainer`: it avoids double evaluation of arguments when intermediate values have already been traced. For regular usage, the `FunctionNode` evaluation handles this internally.
 
-**Validations effectuées** :
-1. La fonction existe (`EvaluatorException` sinon)
-2. Le nombre d'arguments respecte les bornes (`TypeErrorException` sinon)
-3. Si le corps de la fonction lève, l'exception est gérée selon la politique ci-dessous
+**Validations performed**:
+1. The function exists (`EvaluatorException` otherwise)
+2. The argument count is within bounds (`TypeErrorException` otherwise)
+3. If the function body throws, the exception is handled per the policy below
 
-### Politique d'exceptions des fonctions
+### Function exception policy
 
-Quand le corps d'une fonction (built-in ou custom) lève une exception, le traitement dépend du type :
+When the body of a function (built-in or custom) throws an exception, handling depends on the type:
 
-| Type d'exception levée | Traitement |
+| Exception type thrown | Handling |
 |---|---|
-| `EvaluatorException` et descendantes (`TypeErrorException`, `UnknownVariableException`, etc.) | Propagée **inchangée** |
-| Tout autre `\Throwable` (`RuntimeException`, `LogicException`, `Error`, `TypeError` natif, etc.) | Encapsulée dans `TypeErrorException` avec l'originale en `previous` |
+| `EvaluatorException` and descendants (`TypeErrorException`, `UnknownVariableException`, etc.) | Propagated **unchanged** |
+| Any other `\Throwable` (`RuntimeException`, `LogicException`, `Error`, native `TypeError`, etc.) | Wrapped in `TypeErrorException` with the original as `previous` |
 
-**Justification** :
-- Les exceptions de la lib transitent telles quelles, ce qui permet à une fonction custom de déléguer proprement à `evaluate()` ou `getContextValue()` en interne
-- Toute autre exception PHP brute est wrappée pour garantir une API d'erreur cohérente — `evaluate()` ne laisse jamais fuiter du `TypeError` natif ou autre
+**Rationale**:
+- Library exceptions pass through unchanged, allowing a custom function to cleanly delegate to `evaluate()` or `getContextValue()` internally
+- Any raw PHP exception is wrapped to guarantee a consistent error API — `evaluate()` never leaks a native `TypeError` or similar
 
-**Conséquence pratique** : du code utilisateur dans une fonction custom peut lever ce qu'il veut, l'appelant de `evaluate()` n'aura affaire qu'à des exceptions de la lib.
+**Practical consequence**: user code inside a custom function can throw anything; the caller of `evaluate()` will only ever deal with library exceptions.
 
-### Validation d'arity
+### Arity validation
 
-PHP est silencieusement permissif avec les arguments en trop sur les closures non-variadiques (il les ignore). La lib **rejette** ce comportement : passer trop d'arguments lève une `TypeErrorException` claire.
+PHP silently ignores extra arguments on non-variadic closures. The library **rejects** this behavior: passing too many arguments throws a clear `TypeErrorException`.
 
 ```php
 $eval->evaluate('round(1, 2, 3)', []);
 // TypeErrorException: Function "round" expects between 1 and 2 arguments, 3 given
 ```
 
-Le message inclut les bornes selon les cas :
-- `exactly N` si min == max
-- `at least N` si variadique (max == PHP_INT_MAX)
-- `between N and M` sinon
+The message includes the bounds based on the case:
+- `exactly N` if min == max
+- `at least N` if variadic (max == PHP_INT_MAX)
+- `between N and M` otherwise
 
-## Catalogue des built-in
+## Built-in catalogue
 
-Les built-in sont enregistrés à la construction de l'Evaluator. Ils peuvent être surchargés via `registerFunction()`.
+Built-ins are registered at `Evaluator` construction time. They can be overridden via `registerFunction()`.
 
-### Casting de types
+### Type casting
 
 #### `int(val)` → `int`
 
-Convertit en entier. **Tronque vers zéro** pour les floats (comportement de `(int)` PHP) :
+Converts to integer. **Truncates toward zero** for floats (behavior of PHP's `(int)` cast):
 - `int(3.7) → 3`, `int(3.5) → 3`, `int(-3.7) → -3`, `int(-3.5) → -3`
-- Acceptés : `int` (passthrough), `float` (truncation), `string` entière (regex `/^-?[0-9]+$/`)
-- Rejetés : `string` flottante (`'3.7'`), `bool`, `null`, autre
+- Accepted: `int` (passthrough), `float` (truncation), integer `string` (regex `/^-?[0-9]+$/`)
+- Rejected: float string (`'3.7'`), `bool`, `null`, other
 
-⚠️ Si vous voulez de l'arrondi, utilisez `round()`. Pour floor/ceil, utilisez `floor()` / `ceil()`.
+⚠️ If you want rounding, use `round()`. For floor/ceil, use `floor()` / `ceil()`.
 
 #### `float(val)` → `float`
 
-Convertit en flottant. Accepte `int`, `float`, et toute chaîne `is_numeric()` (donc `'3.14'`, `'1e5'`, etc.). Rejette le reste.
+Converts to float. Accepts `int`, `float`, and any `is_numeric()` string (so `'3.14'`, `'1e5'`, etc.). Rejects the rest.
 
 #### `bool(val)` → `bool`
 
-**Stricte**, plus restrictive que `(bool)` PHP natif. Accepte uniquement :
+**Strict** — more restrictive than PHP's native `(bool)` cast. Accepts only:
 - `bool` (passthrough)
-- `int` strictement 0 ou 1
-- `float` strictement 0.0 ou 1.0
-- `string` `'0'`, `'1'`, `'true'`, `'false'` (la dernière est insensible à la casse)
+- `int` strictly 0 or 1
+- `float` strictly 0.0 or 1.0
+- `string` `'0'`, `'1'`, `'true'`, `'false'` (the last is case-insensitive)
 
-Tout le reste (2, [], null, autre chaîne) → `TypeErrorException`.
+Everything else (2, [], null, other string) → `TypeErrorException`.
 
 #### `str(val)` → `string`
 
-Convertit en chaîne. Pour les floats, formatage **sans notation scientifique** :
-- Adapté à la magnitude (14 décimales en deçà de 1, ajusté au-dessus pour totaliser 15 chiffres significatifs)
-- Trailing zeros supprimés
-- Rejette NaN, INF, |val| >= 1e15, |val| < 1e-10 (voir `formatFloatForString()`)
+Converts to string. For floats, formats **without scientific notation**:
+- Adapted to magnitude (14 decimals below 1, adjusted above to total 15 significant digits)
+- Trailing zeros removed
+- Rejects NaN, INF, |val| >= 1e15, |val| < 1e-10 (see `formatFloatForString()`)
 
-Exemples : `str(1.0) → '1'`, `str(1.50) → '1.5'`, `str(0.000001) → '0.000001'`
+Examples: `str(1.0) → '1'`, `str(1.50) → '1.5'`, `str(0.000001) → '0.000001'`
 
-### Arithmétique
+### Arithmetic
 
 #### `round(val, precision = 0)` → `float`
 
-Arrondit avec `precision` décimales. Borne : `0 <= precision <= 14` (aligné sur `PHP_FLOAT_DIG = 15` chiffres significatifs — au-delà de 14, `round()` n'a plus de sens physiquement).
+Rounds with `precision` decimal places. Bound: `0 <= precision <= 14` (aligned with `PHP_FLOAT_DIG = 15` significant digits — beyond 14, `round()` no longer has physical meaning).
 
 #### `floor(val)` → `float`, `ceil(val)` → `float`
 
-Arrondi vers le bas / vers le haut.
+Round down / round up.
 
 #### `abs(val)` → `int|float`
 
-Valeur absolue. Type préservé.
+Absolute value. Type preserved.
 
 #### `min(a, b)` → `int|float`, `max(a, b)` → `int|float`
 
-⚠️ **Exactement 2 arguments**. Pour minimum/maximum d'une liste, utiliser `min_of()` / `max_of()`. C'est délibéré : `min(a, b, c)` peut prêter à confusion (variadique fixe ou liste ?), on force l'explicite.
+⚠️ **Exactly 2 arguments**. For minimum/maximum of a list, use `min_of()` / `max_of()`. This is intentional: `min(a, b, c)` could be confusing (fixed variadic or list?), so the explicit form is enforced.
 
 #### `pow(base, exp)` → `int|float`
 
-Puissance. Renvoie `int` si les deux opérandes sont `int` et que le résultat tient dans `PHP_INT_MAX`, sinon `float`.
+Exponentiation. Returns `int` if both operands are `int` and the result fits in `PHP_INT_MAX`, otherwise `float`.
 
-**Gardes spécifiques** :
-- Base négative avec exposant non-entier → rejet (résultat serait NaN)
-- Base zéro avec exposant négatif → rejet (division par zéro)
-- Résultat NaN ou INF → rejet avec message clair
+**Specific guards**:
+- Negative base with non-integer exponent → rejected (result would be NaN)
+- Zero base with negative exponent → rejected (division by zero)
+- Result is NaN or INF → rejected with a clear message
 
-C'est la **seule** fonction où NaN/INF sont rattrapés **dans la fonction** (et pas seulement à l'opérateur en aval). Justification : `pow(10, 1000)` est le cas le plus courant de débordement, le message côté `pow()` est plus actionnable que "operator '+' value is INF".
+This is the **only** function where NaN/INF are caught **inside the function** (rather than only at the downstream operator). Rationale: `pow(10, 1000)` is the most common overflow case; the message from `pow()` is more actionable than "operator '+' value is INF".
 
 #### `sqrt(val)` → `float`
 
-Racine carrée. Rejette les valeurs négatives.
+Square root. Rejects negative values.
 
 #### `clamp(val, min, max)` → `int|float`
 
-Borne `val` dans `[min, max]`. Rejette si `min > max`.
+Clamps `val` to `[min, max]`. Rejects if `min > max`.
 
 #### `is_finite(val)` → `bool`
 
-**Échappatoire pour inspecter NaN/INF** : la seule façon de tester ces valeurs depuis une expression, puisque tout opérateur arithmétique ou de comparaison les rejette.
+**Escape hatch to inspect NaN/INF**: the only way to test these values from within an expression, since every arithmetic or comparison operator rejects them.
 
 ```php
-'is_finite(x)'  // true si x est un nombre fini, false si NaN/INF, TypeError si pas un nombre
+'is_finite(x)'  // true if x is a finite number, false if NaN/INF, TypeError if not a number
 ```
 
-### Chaînes
+### Strings
 
-| Fonction | Description |
+| Function | Description |
 |---|---|
-| `length(val)` | Longueur en caractères UTF-8 (string) ou nombre d'éléments (array) |
-| `count(list)` | Nombre d'éléments d'un tableau (équivalent de `length()` pour les listes uniquement — `TypeError` si non-array). Rend l'intention explicite quand on travaille sur des listes. |
-| `upper(s)` | Majuscules (`mb_strtoupper`) |
-| `lower(s)` | Minuscules (`mb_strtolower`) |
-| `trim(s)` | Trim PHP standard |
+| `length(val)` | Length in UTF-8 characters (string) or number of elements (array) |
+| `count(list)` | Number of elements in an array (equivalent of `length()` for lists only — `TypeError` if not an array). Makes the intent explicit when working with lists. |
+| `upper(s)` | Uppercase (`mb_strtoupper`) |
+| `lower(s)` | Lowercase (`mb_strtolower`) |
+| `trim(s)` | Standard PHP trim |
 | `contains(haystack, needle)` | `str_contains` |
 | `startsWith(haystack, needle)` | `str_starts_with` |
 | `endsWith(haystack, needle)` | `str_ends_with` |
 | `substr(s, start, length?)` | `mb_substr` |
-| `concat(a, b, ...)` | Concatène, accepte string/int/float (float formaté comme `str()`) |
+| `concat(a, b, ...)` | Concatenates, accepts string/int/float (float formatted like `str()`) |
 | `replace(subject, search, replace)` | `str_replace` |
 
-### Listes (agrégats)
+### Lists (aggregates)
 
-| Fonction | Description | Liste vide |
+| Function | Description | Empty list |
 |---|---|---|
-| `sum(list)` | Somme | `0` |
-| `avg(list)` | Moyenne | `TypeErrorException` |
+| `sum(list)` | Sum | `0` |
+| `avg(list)` | Average | `TypeErrorException` |
 | `min_of(list)` | Minimum | `TypeErrorException` |
 | `max_of(list)` | Maximum | `TypeErrorException` |
 
-Toutes valident que les éléments sont numériques ; rejettent l'élément fautif avec son index.
+All validate that elements are numeric; reject the offending element with its index.
 
-### Autres
+### Other
 
 #### `coalesce(a, b, c, ...)` → `mixed`
 
-Renvoie le premier argument non-`null`. Complément n-aire de l'opérateur `??`.
+Returns the first non-`null` argument. N-ary complement to the `??` operator.
 
 ```php
-'coalesce(a, b, c, 0)'  // 0 si a, b, c sont tous null
+'coalesce(a, b, c, 0)'  // 0 if a, b, and c are all null
 ```
 
 ### Dates
 
-Formats supportés : `Y-m-d`, `Y-m-d H:i`, `Y-m-d H:i:s`, `Y-m-d\TH:i`, `Y-m-d\TH:i:s` (ISO 8601 avec séparateur `T`, courant dans les APIs JSON/REST).
+Supported formats: `Y-m-d`, `Y-m-d H:i`, `Y-m-d H:i:s`, `Y-m-d\TH:i`, `Y-m-d\TH:i:s` (ISO 8601 with `T` separator, common in JSON/REST APIs).
 
-| Fonction | Description |
+| Function | Description |
 |---|---|
-| `today()` | Date courante au format `Y-m-d` |
-| `now()` | Date+heure courante au format `Y-m-d H:i:s` |
-| `year(date)` | Année (int) |
-| `month(date)` | Mois (int) |
-| `day(date)` | Jour (int) |
-| `hour(date)` | Heure (int) |
+| `today()` | Current date in `Y-m-d` format |
+| `now()` | Current date+time in `Y-m-d H:i:s` format |
+| `year(date)` | Year (int) |
+| `month(date)` | Month (int) |
+| `day(date)` | Day (int) |
+| `hour(date)` | Hour (int) |
 | `minute(date)` | Minute (int) |
-| `dateDiff(date1, date2)` | Différence en jours entiers, négatif si `date1 > date2` |
-| `dateAdd(date, n, unit)` | Ajoute `n` unités à la date. `unit` ∈ `{day, month, year, hour, minute}`. `n` peut être négatif. |
+| `dateDiff(date1, date2)` | Difference in whole days, negative if `date1 > date2` |
+| `dateAdd(date, n, unit)` | Adds `n` units to the date. `unit` ∈ `{day, month, year, hour, minute}`. `n` may be negative. |
 
-**Format préservé par `dateAdd()`** : `Y-m-d` reste `Y-m-d`, `Y-m-d H:i` reste `Y-m-d H:i`, `Y-m-d H:i:s` reste `Y-m-d H:i:s`, et les variantes ISO 8601 avec `T` restent avec `T`.
+**Format preserved by `dateAdd()`**: `Y-m-d` stays `Y-m-d`, `Y-m-d H:i` stays `Y-m-d H:i`, `Y-m-d H:i:s` stays `Y-m-d H:i:s`, and ISO 8601 variants with `T` stay with `T`.
 
-**Timezone de `today()` et `now()`** : utilisent la timezone du serveur PHP (`date_default_timezone_get()`). Ce comportement est intentionnel et documenté. Pour une timezone spécifique, enregistrez une fonction custom via `registerFunction()` — c'est le point d'extension recommandé.
+**Timezone for `today()` and `now()`**: use the PHP server timezone (`date_default_timezone_get()`). This behavior is intentional and documented. For a specific timezone, register a custom function via `registerFunction()` — that is the recommended extension point.
 
-**Overflow mois/année** : pas de "snap to end of month" :
+**Month/year overflow**: no "snap to end of month":
 ```
-dateAdd('2026-01-31',  1, 'month') → '2026-03-03'   (et non '2026-02-28')
-dateAdd('2024-02-29',  1, 'year')  → '2025-03-01'   (et non '2025-02-28')
-dateAdd('2026-03-31', -1, 'month') → '2026-03-03'   (et non '2026-02-28')
+dateAdd('2026-01-31',  1, 'month') → '2026-03-03'   (not '2026-02-28')
+dateAdd('2024-02-29',  1, 'year')  → '2025-03-01'   (not '2025-02-28')
+dateAdd('2026-03-31', -1, 'month') → '2026-03-03'   (not '2026-02-28')
 ```
 
-Si vous avez besoin d'une logique "fin de mois", elle doit être implémentée au niveau de l'expression (fonction custom).
+If you need "end of month" logic, implement it at the expression level (custom function).
 
-## Décisions de design
+## Design decisions
 
-### Tous les built-in sont surchargeables
+### All built-ins are overridable
 
-Pas de "fonction protégée" : un projet qui veut redéfinir `today()` (pour les tests) ou `round()` (pour des règles métier spécifiques) le fait sans gymnastique.
+No "protected function": a project that wants to redefine `today()` (for tests) or `round()` (for specific business rules) can do so without workarounds.
 
-**Conséquence à connaître** : un `registerFunction('round', ...)` invalide les hypothèses du reste du projet si plusieurs codes partagent l'instance d'`ExpressionEvaluator`. À utiliser avec discernement.
+**Known consequence**: a `registerFunction('round', ...)` invalidates the assumptions of the rest of the project if multiple codepaths share the same `ExpressionEvaluator` instance. Use with care.
 
-### `min` / `max` à exactement 2 arguments
+### `min` / `max` with exactly 2 arguments
 
-Délibéré pour l'explicite : `min(a, b)` opère sur deux valeurs, `min_of([a, b, c])` opère sur une liste. Pas d'ambiguïté variadique.
+Intentional for clarity: `min(a, b)` operates on two values, `min_of([a, b, c])` operates on a list. No variadic ambiguity.
 
-### NaN / INF rejetés au plus tôt
+### NaN / INF rejected as early as possible
 
-La politique générale est : NaN/INF ne transitent jamais **à travers un opérateur** d'évaluation. Conséquence :
-- À chaque opérateur arithmétique, comparaison, égalité (et `-` unaire) → rejet `TypeErrorException`
-- Dans `pow()` spécifiquement (rejet en interne pour message clair)
-- **En revanche**, la résolution d'une variable et le retour d'une fonction ne rejettent **pas** : une valeur NaN/INF peut transiter jusqu'à `is_finite()` sans entrer dans un opérateur (c'est ce qui rend `is_finite()` exploitable).
+The general policy is: NaN/INF never transit **through an operator** during evaluation. As a result:
+- At every arithmetic operator, comparison, equality (and unary `-`) → `TypeErrorException`
+- In `pow()` specifically (rejected internally for a clear message)
+- **However**, variable resolution and function return values do **not** reject: a NaN/INF value can transit until `is_finite()` without entering an operator (which is precisely what makes `is_finite()` usable).
 
-Seule échappatoire pour inspecter : `is_finite()`, qui inspecte sans faire transiter dans un opérateur.
+The only inspection escape hatch: `is_finite()`, which inspects without entering an operator.
 
-### Politique uniforme `TypeErrorException`
+### Uniform `TypeErrorException` policy
 
-Tous les rejets de typage (mauvaise arity, type incorrect, valeur hors borne, NaN/INF, etc.) lèvent `TypeErrorException` — pas `InvalidArgumentException` ou autre. Permet une distinction nette côté caller entre :
-- `SyntaxErrorException` : problème de syntaxe (compile-time)
-- `UnknownVariableException` : problème de contexte (runtime, données)
-- `TypeErrorException` : problème de typage (runtime, code/logique)
-- `EvaluatorException` : problème structurel (AST corrompu, profondeur, fonction inconnue)
+All type rejections (wrong arity, incorrect type, out-of-bound value, NaN/INF, etc.) throw `TypeErrorException` — not `InvalidArgumentException` or other. This enables a clean distinction for the caller between:
+- `SyntaxErrorException`: syntax problem (compile-time)
+- `UnknownVariableException`: context problem (runtime, data)
+- `TypeErrorException`: typing problem (runtime, code/logic)
+- `EvaluatorException`: structural problem (corrupted AST, depth, unknown function)
 
-### Arity capturée une seule fois
+### Arity captured once
 
-La réflexion (`ReflectionFunction`) est utilisée une seule fois, à l'enregistrement, pour capturer `min` et `max`. Plus de réflexion à chaque appel — l'overhead est concentré sur `registerFunction()`.
+Reflection (`ReflectionFunction`) is used only once, at registration time, to capture `min` and `max`. No runtime reflection on each call — the overhead is concentrated in `registerFunction()`.
 
-## Limitations connues
+## Known limitations
 
-### Pas d'introspection de la signature
+### No signature introspection
 
-`getFunctions()` retourne uniquement les noms. Pas d'API pour récupérer la signature (types des paramètres, nom des arguments, description…). Pour de l'aide contextuelle dans un éditeur, il faudrait l'ajouter — c'est conceptuellement faisable via la réflexion mais aucune API n'est exposée à ce jour.
+`getFunctions()` returns only names. No API to retrieve the signature (parameter types, argument names, description...). For contextual help in an editor, this would need to be added — conceptually feasible via reflection, but no API is exposed at this time.
 
-### Pas de versioning des built-in
+### No built-in versioning
 
-Une mise à jour de la lib peut changer le comportement d'un built-in (par exemple si on corrige un edge case de `dateAdd`). Pas de mécanisme de version par fonction.
+A library update may change the behavior of a built-in (e.g. if an edge case in `dateAdd` is fixed). No per-function version mechanism.
 
-### Pas de namespacing
+### No namespacing
 
-Les noms de fonctions sont à plat dans un dictionnaire unique. Pas de `math.round` vs `string.length`. Une fonction `length` enregistrée par l'utilisateur écrase la built-in.
+Function names are flat in a single dictionary. No `math.round` vs `string.length`. A `length` function registered by the user overwrites the built-in.

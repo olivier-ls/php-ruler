@@ -1,16 +1,16 @@
 # Explainer
 
-## Vue d'ensemble
+## Overview
 
-L'Explainer est un outil de **diagnostic** : il évalue une expression comme `evaluate()` mais produit en plus une représentation arborescente de chaque nœud avec :
-- L'expression locale reconstituée (forme humaine de ce que fait ce nœud)
-- Le statut : évalué / court-circuité / variable manquante / erreur
-- Les valeurs intermédiaires (opérandes gauche/droite, résultat)
-- La structure parent/enfant pour AND/OR/NOT/ternaire
+The Explainer is a **diagnostic tool**: it evaluates an expression like `evaluate()` but also produces a tree representation of each node with:
+- The reconstructed local expression (a human-readable form of what this node does)
+- The status: evaluated / short-circuited / missing variable / error
+- Intermediate values (left/right operands, result)
+- The parent/child structure for AND/OR/NOT/ternary
 
-Cas d'usage typique : afficher à un utilisateur backoffice **pourquoi** une règle a passé ou échoué, condition par condition. Identifier que `cart.total > 100` a échoué parce que `cart.total = 85`, ou que `customer.vip = true` n'a pas pu être évaluée parce que `customer.vip` manque du contexte.
+Typical use case: show a back-office user **why** a rule passed or failed, condition by condition. Identify that `cart.total > 100` failed because `cart.total = 85`, or that `customer.vip = true` could not be evaluated because `customer.vip` is missing from the context.
 
-⚠️ **L'Explainer n'est pas conçu pour de la production à fort débit**. C'est un outil de diagnostic. Voir les sections "Coût" et "Limitations".
+⚠️ **The Explainer is not designed for high-throughput production use.** It is a diagnostic tool. See the "Cost" and "Limitations" sections.
 
 ## API
 
@@ -26,29 +26,29 @@ final class ExpressionExplainer
 
 final class ExplainResult
 {
-    public readonly ?bool $passed;     // null si non évalué (missing/error/short-circuit racine)
+    public readonly ?bool $passed;     // null if not evaluated (missing/error/root short-circuit)
     public readonly ExplainNode $root;
 
-    public function failures(): array;   // leaves évaluées, passed === false
-    public function successes(): array;  // leaves évaluées, passed === true
-    public function leaves(): array;     // toutes les leaves
-    public function skipped(): array;    // leaves court-circuitées
-    public function missing(): array;    // leaves bloquées par variable manquante
-    public function errors(): array;     // leaves bloquées par erreur (type, division, etc.)
-    public function unresolved(): array; // combine missing() + errors() — tout ce qui a bloqué l'évaluation
+    public function failures(): array;   // evaluated leaves with passed === false
+    public function successes(): array;  // evaluated leaves with passed === true
+    public function leaves(): array;     // all leaves
+    public function skipped(): array;    // short-circuited leaves
+    public function missing(): array;    // leaves blocked by a missing variable
+    public function errors(): array;     // leaves blocked by an error (type, division, etc.)
+    public function unresolved(): array; // combines missing() + errors() — everything that blocked evaluation
 }
 
 final class ExplainNode
 {
-    public readonly string $expression;     // expression locale reconstituée
+    public readonly string $expression;     // reconstructed local expression
     public readonly ?bool $passed;
     public readonly string $operator;       // '=', 'AND', 'NOT', '?:', 'value', 'skipped', 'missing', 'error'
     public readonly mixed $leftValue;
     public readonly mixed $rightValue;
     public readonly array $children;        // ExplainNode[]
     public readonly ExplainStatus $status;
-    public readonly ?string $detail;        // path manquant ou message d'erreur
-    public readonly bool $leftMissing;      // spécifique aux nœuds ?? : true si la gauche était absente
+    public readonly ?string $detail;        // missing path or error message
+    public readonly bool $leftMissing;      // specific to ?? nodes: true if the left side was absent
 
     public function isLeaf(): bool;
     public function isCompound(): bool;
@@ -67,86 +67,86 @@ enum ExplainStatus
 }
 ```
 
-## Comportements
+## Behaviors
 
 ### `explain(string $expression, array $context): ExplainResult`
 
-Construit l'arbre d'explication complet pour l'expression dans le contexte donné.
+Builds the full explanation tree for the expression in the given context.
 
-**Ne lève jamais sur** : variable manquante, erreur de type, division par zéro, NaN/INF. Ces conditions deviennent des nœuds `MISSING` ou `ERROR` dans l'arbre.
+**Never throws on**: missing variable, type error, division by zero, NaN/INF. These conditions become `MISSING` or `ERROR` nodes in the tree.
 
-**Lève toujours sur** : erreur de syntaxe (compile-time), profondeur d'AST dépassée, AST corrompu. Ces erreurs structurelles ne peuvent pas être "expliquées" — il n'y a rien à traverser.
+**Always throws on**: syntax error (compile-time), exceeded AST depth, corrupted AST. These structural errors cannot be "explained" — there is nothing to traverse.
 
-### Structure de l'arbre
+### Tree structure
 
-L'arbre miroir la structure AST avec une **vue orientée diagnostic** :
+The tree mirrors the AST structure with a **diagnostic-oriented view**:
 
-| Type d'AST | Représentation Explainer |
+| AST type | Explainer representation |
 |---|---|
-| `BinaryNode` opérateur AND/OR | Compound, 2 enfants |
-| `UnaryNode` NOT | Compound, 1 enfant (sauf NOT IN, voir ci-dessous) |
-| `TernaryNode` | Compound, 3 enfants (condition + 2 branches) |
-| `BinaryNode` opérateur de comparaison `=`, `!=`, `>`, `>=`, `<`, `<=` | Leaf avec `leftValue` et `rightValue` |
-| `InNode` (et `NOT IN` : `UnaryNode(NOT, InNode)`) | Leaf unique, `operator: 'IN'` ou `'NOT IN'` |
-| `BinaryNode` opérateur `??` | Leaf, distingue "gauche absente" vs "gauche null" via `leftMissing` |
-| Arithmétique, fonctions, littéraux, variables seules | Leaf, `operator: 'value'`, `leftValue` = la valeur |
+| `BinaryNode` AND/OR operator | Compound, 2 children |
+| `UnaryNode` NOT | Compound, 1 child (except NOT IN, see below) |
+| `TernaryNode` | Compound, 3 children (condition + 2 branches) |
+| `BinaryNode` comparison operator `=`, `!=`, `>`, `>=`, `<`, `<=` | Leaf with `leftValue` and `rightValue` |
+| `InNode` (and `NOT IN`: `UnaryNode(NOT, InNode)`) | Single leaf, `operator: 'IN'` or `'NOT IN'` |
+| `BinaryNode` `??` operator | Leaf, distinguishes "left absent" vs "left null" via `leftMissing` |
+| Arithmetic, functions, literals, single variables | Leaf, `operator: 'value'`, `leftValue` = the value |
 
-### Nœuds compound vs leaves
+### Compound vs leaf nodes
 
-- **Compound** : AND, OR, NOT, ternaire. Ont des enfants. `passed` est calculé selon la logique de l'opérateur sur les enfants évalués.
-- **Leaves** : tout le reste. Pas d'enfants. `passed` reflète la "vérité" du nœud (un comparison qui retourne true, un IN qui matche, une valeur truthy...).
+- **Compound**: AND, OR, NOT, ternary. Have children. `passed` is calculated based on the operator logic over evaluated children.
+- **Leaves**: everything else. No children. `passed` reflects the "truth" of the node (a comparison that returns true, an IN that matches, a truthy value...).
 
-`ExplainResult::failures()`, `successes()`, etc. **n'opèrent que sur les leaves**. Pour un résumé top-level, regarder `ExplainResult::root` directement.
+`ExplainResult::failures()`, `successes()`, etc. **operate on leaves only**. For a top-level summary, look directly at `ExplainResult::root`.
 
-### Statuts des nœuds
+### Node statuses
 
 #### `EVALUATED`
-Le nœud a été visité, son résultat est dans `passed`.
+The node was visited and its result is in `passed`.
 
 #### `SHORT_CIRCUITED`
-Le nœud n'a pas été visité parce qu'une branche frère/parent a résolu l'expression sans lui. Spécifiquement :
-- Branche droite d'un AND avec gauche `false`
-- Branche droite d'un OR avec gauche `true`
-- Branche non-prise d'un ternaire
+The node was not visited because a sibling or parent branch resolved the expression without it. Specifically:
+- Right branch of AND with left being `false`
+- Right branch of OR with left being `true`
+- Untaken branch of a ternary
 
-`passed` est `null`, `operator` est `'skipped'`.
+`passed` is `null`, `operator` is `'skipped'`.
 
 #### `MISSING`
-Le nœud a tenté de résoudre une variable absente du contexte. `detail` contient le message d'`UnknownVariableException`, `operator` est `'missing'`.
+The node attempted to resolve a variable absent from the context. `detail` contains the `UnknownVariableException` message, `operator` is `'missing'`.
 
 #### `ERROR`
-Le nœud a levé une exception non-récupérable (erreur de type, division par zéro, NaN/INF, fonction inconnue, arity invalide...). `detail` contient le message, `operator` est `'error'`.
+The node threw a non-recoverable exception (type error, division by zero, NaN/INF, unknown function, invalid arity...). `detail` contains the message, `operator` is `'error'`.
 
-### Propagation d'erreurs
+### Error propagation
 
-Quand un enfant est en `MISSING` ou `ERROR`, le parent (AND, OR, ternaire...) propage ce statut **vers le haut** plutôt que de tenter d'évaluer (ce qui re-lèverait la même exception).
+When a child has `MISSING` or `ERROR` status, the parent (AND, OR, ternary...) propagates this status **upward** rather than attempting to evaluate (which would re-throw the same exception).
 
-Exemple :
+Example:
 ```php
 $result = $explainer->explain('a > 0 AND b < 100', ['a' => 5]);
-// La feuille 'b < 100' a status=MISSING (detail: 'Unknown variable: "b"')
-// Le compound 'a > 0 AND b < 100' a aussi status=MISSING (propagation)
-// La feuille 'a > 0' a status=EVALUATED, passed=true
+// Leaf 'b < 100' has status=MISSING (detail: 'Unknown variable: "b"')
+// Compound 'a > 0 AND b < 100' also has status=MISSING (propagation)
+// Leaf 'a > 0' has status=EVALUATED, passed=true
 ```
 
-Pour AND/OR, le frère est **quand même tracé** pour donner un diagnostic complet :
-- Si gauche manquante et droite peut être résolue, droite est tracée
-- Si gauche peut être résolue et c'est court-circuit, droite n'est pas tracée (status: SHORT_CIRCUITED)
+For AND/OR, the sibling is **still traced** to provide a complete diagnostic:
+- If left is missing and right can be resolved, right is traced
+- If left can be resolved and it short-circuits, right is not traced (status: SHORT_CIRCUITED)
 
-### Cas particulier : `??` (null-coalescing)
+### Special case: `??` (null-coalescing)
 
-Le `??` "absorbe" l'absence ou la nullité de la gauche :
-- Si gauche absente ou null → droite évaluée
-- Si gauche présente et non-null → droite skippée
+`??` "absorbs" the absence or nullity of the left side:
+- If left is absent or null → right is evaluated
+- If left is present and non-null → right is skipped
 
-Le nœud `??` est représenté comme un **leaf unique** (pas un compound), avec :
-- `leftValue` : la valeur résolue à gauche (`null` si absente, `null` si `null`)
-- `rightValue` : la valeur de droite si la gauche a été remplacée (`null` sinon)
-- `leftMissing` : `true` si la gauche était **absente** (variable manquante), `false` si la gauche était présente mais valait `null`. Permet de distinguer les deux cas.
+The `??` node is represented as a **single leaf** (not a compound), with:
+- `leftValue`: the value resolved on the left (`null` if absent, `null` if null)
+- `rightValue`: the right-side value if the left was replaced (`null` otherwise)
+- `leftMissing`: `true` if the left side was **absent** (missing variable), `false` if it was present but valued `null`. Allows distinguishing the two cases.
 
 ```php
 $explainer->explain('a ?? 10', ['a' => null]);
-// leftValue: null, rightValue: 10, leftMissing: false, passed: true (10 truthy)
+// leftValue: null, rightValue: 10, leftMissing: false, passed: true (10 is truthy)
 
 $explainer->explain('a ?? 10', []);
 // leftValue: null, rightValue: 10, leftMissing: true, passed: true
@@ -154,142 +154,142 @@ $explainer->explain('a ?? 10', []);
 
 ### `ExplainResult::unresolved(): array`
 
-Combine `missing()` et `errors()` : retourne toutes les leaves qui ont empêché l'évaluation de se compléter, quelle qu'en soit la raison.
+Combines `missing()` and `errors()`: returns all leaves that prevented evaluation from completing, for whatever reason.
 
 ```php
 $result = $explainer->explain('a > 0 AND b < 100', []);
-// a et b sont tous les deux manquants
+// both a and b are missing
 
 count($result->missing());    // 2
 count($result->errors());     // 0
-count($result->unresolved()); // 2 — équivalent à array_merge(missing, errors)
+count($result->unresolved()); // 2 — equivalent to array_merge(missing, errors)
 ```
 
-C'est la méthode la plus utile en backoffice pour répondre à "qu'est-ce qui a bloqué cette expression ?", sans avoir à merger manuellement les deux collections.
+This is the most useful method in a back-office to answer "what blocked this expression?", without having to manually merge the two collections.
 
-Une expression `x NOT IN [...]` est représentée dans l'AST comme `UnaryNode(NOT, InNode(...))`. L'Explainer la traite comme un **leaf unique** avec `operator: 'NOT IN'` plutôt que de produire un compound NOT contenant un IN — c'est plus naturel pour l'utilisateur.
+An `x NOT IN [...]` expression is represented in the AST as `UnaryNode(NOT, InNode(...))`. The Explainer treats it as a **single leaf** with `operator: 'NOT IN'` rather than producing a NOT compound containing an IN — this is more natural for the user.
 
-L'expression reconstituée est `"x NOT IN [...]"` (et non `"NOT x IN [...]"` qui serait invalide).
+The reconstructed expression is `"x NOT IN [...]"` (not `"NOT x IN [...]"` which would be invalid).
 
-## Pipeline interne
+## Internal pipeline
 
-L'Explainer fonctionne en **deux phases** :
+The Explainer works in **two phases**:
 
-1. **`buildTrace()`** — parcours préliminaire de l'AST qui évalue chaque nœud et stocke son résultat (ou son statut MISSING/ERROR) dans des maps indexées par `spl_object_id()`. Respecte les short-circuits (AND/OR/ternaire) pour ne pas évaluer ce qui ne doit pas l'être.
+1. **`buildTrace()`** — preliminary AST traversal that evaluates each node and stores its result (or its MISSING/ERROR status) in maps indexed by `spl_object_id()`. Respects short-circuits (AND/OR/ternary) to avoid evaluating what should not be.
 
-2. **`explainNode()`** — parcours producteur qui construit l'arbre `ExplainNode` en consultant les valeurs déjà tracées. Pas de ré-évaluation des fonctions à ce stade.
+2. **`explainNode()`** — producer traversal that builds the `ExplainNode` tree by consulting the already-traced values. No re-evaluation of functions at this stage.
 
-Ce design en deux phases permet d'avoir :
-- Une trace complète des valeurs avant la production de l'arbre (pour distinguer "skipped" de "not yet reached")
-- Une protection contre la double évaluation des `FunctionNode` (les fonctions sont appelées une fois via `callFunction()` avec leurs arguments déjà tracés)
+This two-phase design allows:
+- A complete trace of values before producing the tree (to distinguish "skipped" from "not yet reached")
+- Protection against double evaluation of `FunctionNode` (functions are called once via `callFunction()` with their already-traced arguments)
 
-## ⚠️ Coût : double évaluation des fonctions dans les compounds
+## ⚠️ Cost: double evaluation of functions in compounds
 
-C'est la limitation **structurelle** la plus importante de l'Explainer.
+This is the most important **structural limitation** of the Explainer.
 
-### Le mécanisme
+### The mechanism
 
-Pendant `buildTrace()` :
-- Les `FunctionNode` sont appelés via `callFunction()` avec leurs arguments **déjà tracés** : un seul appel
-- Les autres nœuds (`BinaryNode`, `UnaryNode`, `InNode`, `TernaryNode`) sont évalués via `evaluateAst()` qui **re-walk le sous-arbre complet**
+During `buildTrace()`:
+- `FunctionNode` items are called via `callFunction()` with their **already-traced** arguments: a single call
+- Other nodes (`BinaryNode`, `UnaryNode`, `InNode`, `TernaryNode`) are evaluated via `evaluateAst()` which **re-walks the entire sub-tree**
 
-Conséquence : toute fonction imbriquée dans un nœud compound est **appelée une deuxième fois** quand le compound parent évalue son sous-arbre via `evaluateAst()`.
+As a result, any function nested inside a compound node is **called a second time** when the parent compound evaluates its sub-tree via `evaluateAst()`.
 
 ### Quantification
 
-Le multiplicateur est **exactement 2 par occurrence**, pas plus. Pas multiplicatif avec la profondeur d'imbrication :
+The multiplier is **exactly 2 per occurrence**, no more. Not multiplicative with nesting depth:
 
 ```
-counter() + counter()        → 4 appels  (2 occurrences × 2)
-counter() > 0 AND counter()  → 6 appels  (3 occurrences × 2)
-now() seul à la racine       → 1 appel   (pas de compound parent)
+counter() + counter()        → 4 calls  (2 occurrences × 2)
+counter() > 0 AND counter()  → 6 calls  (3 occurrences × 2)
+now() alone at root          → 1 call   (no parent compound)
 ```
 
-### Conséquence
+### Consequence
 
-**⚠️ Les fonctions à effet de bord (compteurs, écritures base, envois mail, etc.) ne doivent JAMAIS être utilisées dans des expressions passées à `explain()` / `explainAst()`.**
+**⚠️ Side-effect functions (counters, database writes, mail sends, etc.) must NEVER be used in expressions passed to `explain()` / `explainAst()`.**
 
-Cette interdiction vaut aussi pour les fonctions dont l'idempotence n'est pas garantie à 100% (lecture avec side-effect, génération d'UUID, horodatage, etc.). En cas de doute : ne pas utiliser avec l'Explainer.
+This prohibition also applies to functions whose idempotence is not 100% guaranteed (reads with side effects, UUID generation, timestamps, etc.). When in doubt: do not use with the Explainer.
 
-Cette restriction **ne s'applique pas** aux autres modes d'évaluation (`evaluate()`, `evaluateSafe()`, etc.) où chaque fonction est appelée exactement une fois.
+This restriction **does not apply** to other evaluation modes (`evaluate()`, `evaluateSafe()`, etc.) where each function is called exactly once.
 
-### Pourquoi pas un fix ?
+### Why not fix it?
 
-Le design alternatif (single-pass évaluation qui produit l'arbre au fur et à mesure) aurait des inconvénients :
-- Plus difficile de gérer les short-circuits proprement (il faut savoir si une branche a été visitée avant de produire la `ExplainNode` parent)
-- Plus difficile de distinguer "skipped" de "errored" sans le contexte complet
+The alternative design (single-pass evaluation that produces the tree as it goes) has drawbacks:
+- Harder to handle short-circuits cleanly (you need to know whether a branch was visited before producing the parent `ExplainNode`)
+- Harder to distinguish "skipped" from "errored" without the full context
 
-Le compromis actuel : l'Explainer est un outil de diagnostic, pas un évaluateur de production. La contrainte "pas d'effets de bord dans les fonctions explainées" est documentée et acceptable.
+The current trade-off: the Explainer is a diagnostic tool, not a production evaluator. The constraint "no side-effect functions in explained expressions" is documented and acceptable.
 
-## Reconstruction d'expression : `printNode()`
+## Expression reconstruction: `printNode()`
 
-Chaque `ExplainNode` contient une chaîne `expression` qui est l'expression locale **reconstruite depuis l'AST** (pas extraite de la chaîne d'origine).
+Each `ExplainNode` contains an `expression` string that is the local expression **reconstructed from the AST** (not extracted from the original string).
 
-Avantages :
-- Disponible même pour des nœuds dont l'expression source originale a été perdue (typiquement avec `explainAst()` sur un AST chargé depuis `importAst()`)
-- Normalisée (espaces, parenthèses) : `'1+1'` et `'1 + 1'` donnent le même rendu
+Benefits:
+- Available even for nodes whose original source expression has been lost (typically with `explainAst()` on an AST loaded from `importAst()`)
+- Normalized (spaces, parentheses): `'1+1'` and `'1 + 1'` produce the same output
 
-Le printer gère :
-- La précédence des opérateurs (parenthèses ajoutées au minimum nécessaire)
-- Le cas `NOT IN` (rendu propre, ré-injectable dans le Parser)
-- Les littéraux quotés avec échappement (`L'Oréal` → `'L''Oréal'`)
-- Les listes `[1, 2, 3]`, les booléens, `null`
+The printer handles:
+- Operator precedence (parentheses added at the minimum necessary)
+- The `NOT IN` case (clean rendering, re-injectable into the Parser)
+- Quoted literals with escaping (`L'Oréal` → `'L''Oréal'`)
+- Lists `[1, 2, 3]`, booleans, `null`
 
-Le tableau de précédence du printer est **synchronisé** avec celui du Parser. Si les niveaux changent dans le Parser, ils doivent changer ici aussi.
+The printer's precedence table is **synchronized** with the Parser's. If levels change in the Parser, they must change here too.
 
-## Décisions de design
+## Design decisions
 
-### Indexation par `spl_object_id`
+### Indexing by `spl_object_id`
 
-Les maps `$trace` et `$errors` sont indexées par `spl_object_id($node)`. Garantit l'unicité même quand le même nœud est référencé plusieurs fois (cas du DAG-like sharing toléré par `importAst`).
+The `$trace` and `$errors` maps are indexed by `spl_object_id($node)`. Guarantees uniqueness even when the same node is referenced multiple times (DAG-like sharing tolerated by `importAst`).
 
-Pas de fuite mémoire : les maps sont réinitialisées à chaque appel à `explainAst()` (`$this->trace = []`).
+No memory leak: the maps are reset on each call to `explainAst()` (`$this->trace = []`).
 
-### Mutually exclusive : trace OU error
+### Mutually exclusive: trace OR error
 
-Un nœud est soit dans `$trace` (évaluation réussie), soit dans `$errors` (status MISSING ou ERROR), **jamais les deux**. Permet de distinguer sans ambiguïté "valeur connue" et "résolution impossible".
+A node is either in `$trace` (successful evaluation) or in `$errors` (MISSING or ERROR status), **never both**. Allows unambiguous distinction between "value known" and "resolution impossible".
 
-### Court-circuit fidèle au mode strict
+### Short-circuits faithful to strict mode
 
-Les short-circuits dans `buildTrace()` reproduisent **exactement** la sémantique d'`Evaluator::evaluate()` :
-- AND avec gauche false → droite non visitée
-- OR avec gauche true → droite non visitée
-- Ternaire → seule la branche choisie est visitée
+Short-circuits in `buildTrace()` reproduce **exactly** the semantics of `Evaluator::evaluate()`:
+- AND with false left → right not visited
+- OR with true left → right not visited
+- Ternary → only the chosen branch is visited
 
-Pas de comportement "best-effort" qui explorerait les branches non prises pour donner plus d'information : ce serait une divergence dangereuse avec l'évaluation réelle.
+No "best-effort" behavior that would explore untaken branches to give more information: that would be a dangerous divergence from actual evaluation.
 
-### Erreur de fonction inconnue : `ERROR` pas `MISSING`
+### Unknown function error: `ERROR` not `MISSING`
 
-Une fonction non enregistrée produit `EvaluatorException("Unknown function...")`, classée comme `ERROR`. C'est cohérent : une fonction inconnue est un problème d'expression (ou de configuration), pas de données.
+An unregistered function produces `EvaluatorException("Unknown function...")`, classified as `ERROR`. This is consistent: an unknown function is an expression (or configuration) problem, not a data problem.
 
-### `passed` du root : `null` si non-évalué
+### Root `passed`: `null` if not evaluated
 
-`ExplainResult::passed` est `null` quand la racine n'a pas pu être pleinement évaluée (manquant, erreur, court-circuité). C'est distinct de `false`. Permet à l'appelant de distinguer "règle évaluée et fausse" vs "règle non évaluable".
+`ExplainResult::passed` is `null` when the root could not be fully evaluated (missing, error, short-circuited). This is distinct from `false`. It allows the caller to distinguish "rule evaluated and false" from "rule not evaluable".
 
-### Collecte des leaves : O(n)
+### Leaf collection: O(n)
 
-`failures()`, `successes()`, etc. utilisent un accumulateur passé par référence (pas de `array_merge` récursif). Important pour rester linéaire en taille d'arbre.
+`failures()`, `successes()`, etc. use an accumulator passed by reference (no recursive `array_merge`). Important to stay linear in tree size.
 
-### Pas de "warnings"
+### No "warnings"
 
-L'Explainer ne signale pas les anomalies "soft" (par exemple : un littéral comparé à lui-même `5 = 5` qui sera toujours vrai). Le diagnostic est purement run-time : ce qui s'est passé, pas ce qui aurait pu être suspect.
+The Explainer does not signal "soft" anomalies (e.g. a literal compared to itself `5 = 5` that will always be true). The diagnostic is purely runtime: what happened, not what might have been suspicious.
 
-## Limitations connues
+## Known limitations
 
-### Side-effects et double évaluation
+### Side effects and double evaluation
 
-Voir la section dédiée plus haut. **Critique** : ne pas utiliser de fonctions à effets de bord dans une expression explainée.
+See the dedicated section above. **Critical**: do not use side-effect functions in an explained expression.
 
-### Pas d'historique d'évaluation
+### No evaluation history
 
-L'Explainer décrit **un** appel, pas un historique. Pour comparer deux évaluations (même règle, deux contextes), il faut deux appels et un diff côté caller.
+The Explainer describes **one** call, not a history. To compare two evaluations (same rule, two contexts), make two calls and diff on the caller side.
 
-### Sérialisation de l'arbre
+### Tree serialization
 
-`ExplainNode` et `ExplainResult` sont des objets standards, sérialisables via `json_encode()` directement (toutes les propriétés sont publiques readonly).
+`ExplainNode` and `ExplainResult` are standard objects, serializable via `json_encode()` directly (all properties are public readonly).
 
-⚠️ Les `leftValue` / `rightValue` peuvent contenir des valeurs PHP arbitraires (tableaux, etc.). La sérialisation JSON gère bien les scalaires et tableaux ; pas de cas d'objet à signaler aujourd'hui puisque l'évaluateur rejette les objets en amont.
+⚠️ `leftValue` / `rightValue` may contain arbitrary PHP values (arrays, etc.). JSON serialization handles scalars and arrays well; no object case to signal today since the evaluator rejects objects upstream.
 
-### Pas de diff sémantique entre nœuds
+### No semantic diff between nodes
 
-Deux expressions sémantiquement équivalentes (`'a > 0 AND b > 0'` et `'b > 0 AND a > 0'`) produisent des arbres différents. C'est attendu : l'arbre suit la structure AST, pas une forme normalisée.
+Two semantically equivalent expressions (`'a > 0 AND b > 0'` and `'b > 0 AND a > 0'`) produce different trees. This is expected: the tree follows the AST structure, not a normalized form.

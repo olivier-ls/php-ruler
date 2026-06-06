@@ -1,12 +1,12 @@
-# Référence du langage
+# Language Reference
 
-## Vue d'ensemble
+## Overview
 
-Cette doc décrit la **syntaxe** acceptée par la lib : ce qu'on peut écrire dans une expression et ce que ça veut dire. C'est la référence pour quiconque rédige des expressions, qu'il soit développeur intégrant la lib ou utilisateur final dans un backoffice.
+This document describes the **syntax** accepted by the library: what you can write in an expression and what it means. It is the reference for anyone writing expressions, whether a developer integrating the library or an end user in a back-office.
 
-Le langage est volontairement **proche de PHP** (opérateurs, précédences, sémantique des littéraux) tout en étant **strict** (pas de coercition silencieuse, pas d'overflow accepté, etc.). L'intuition pour un développeur PHP doit être correcte par défaut.
+The language is intentionally **close to PHP** (operators, precedences, literal semantics) while being **strict** (no silent coercion, no accepted overflow, etc.). A PHP developer's intuition should be correct by default.
 
-## Vue d'ensemble syntaxique
+## Syntax overview
 
 ```
 expression := ternary
@@ -22,44 +22,44 @@ unary      := '-' unary | '+' unary | primary
 primary    := literal | identifier ('(' args ')')? | '(' ternary ')' | '[' list ']'
 ```
 
-## Littéraux
+## Literals
 
-### Entiers
+### Integers
 
-Suite de chiffres décimaux. Bornés par `PHP_INT_MAX` (positif) et `PHP_INT_MIN` (négatif).
+A sequence of decimal digits. Bounded by `PHP_INT_MAX` (positive) and `PHP_INT_MIN` (negative).
 
 ```
 0, 42, 1000000
--1, -42      (le '-' est un opérateur unaire, pas partie du littéral)
+-1, -42      (the '-' is a unary operator, not part of the literal)
 ```
 
-**Au-delà de `PHP_INT_MAX`** : levé en `SyntaxErrorException` à la phase de lex/parse. Exception : la valeur exacte `|PHP_INT_MIN|` (= `PHP_INT_MAX + 1`) est acceptée **uniquement** comme opérande d'un `-` unaire, ce qui permet d'écrire littéralement `PHP_INT_MIN`.
+**Beyond `PHP_INT_MAX`**: throws `SyntaxErrorException` at the lex/parse phase. Exception: the exact value `|PHP_INT_MIN|` (= `PHP_INT_MAX + 1`) is accepted **only** as the operand of a unary `-`, which allows writing `PHP_INT_MIN` literally.
 
-### Flottants
+### Floats
 
-Notation décimale (`.` obligatoire) ou scientifique (`e` ou `E`).
+Decimal notation (`.` required) or scientific notation (`e` or `E`).
 
 ```
 0.5, 3.14, 1.0
 1e10, 2.5E-3, -1.5e6
 ```
 
-**Restrictions** :
-- Pas de forme `.5` (sans entier devant) : doit être `0.5`
-- Pas de forme `5.` (sans décimale derrière) : doit être `5.0`
-- Pas d'`Infinity` ni `NaN` littéraux. Si un littéral float dépasse `PHP_FLOAT_MAX`, levé en `SyntaxErrorException` au lex-time.
+**Restrictions**:
+- No `.5` form (without leading integer): must be `0.5`
+- No `5.` form (without trailing decimal): must be `5.0`
+- No `Infinity` or `NaN` literals. If a float literal exceeds `PHP_FLOAT_MAX`, throws `SyntaxErrorException` at lex time.
 
-### Booléens
+### Booleans
 
-`true` ou `false`, **insensibles à la casse** : `TRUE`, `True`, `tRuE` sont équivalents.
+`true` or `false`, **case-insensitive**: `TRUE`, `True`, `tRuE` are all equivalent.
 
 ### Null
 
-`null`, insensible à la casse.
+`null`, case-insensitive.
 
-### Chaînes
+### Strings
 
-Délimitées par `'` simple ou `"` double quote. **Échappement** : doubler le délimiteur.
+Delimited by `'` single or `"` double quotes. **Escaping**: double the delimiter.
 
 ```
 'hello world'
@@ -68,31 +68,31 @@ Délimitées par `'` simple ou `"` double quote. **Échappement** : doubler le d
 "He said ""hi"""       →  He said "hi"
 ```
 
-**Pas d'autres échappements** : `'\n'` n'est pas un retour ligne, c'est littéralement les deux caractères `\` et `n`. Les chaînes multi-lignes sont possibles mais sans interprétation.
+**No other escaping**: `'\n'` is not a newline — it is literally the two characters `\` and `n`. Multi-line strings are possible but without interpretation.
 
-**Pas d'interpolation** : `'Hello $name'` est la chaîne littérale.
+**No interpolation**: `'Hello $name'` is the literal string.
 
-### Listes
+### Lists
 
-Notation `[...]` avec virgules. Acceptent des littéraux primitifs (pas de variables, pas d'expressions calculées).
+`[...]` notation with commas. Accept primitive literals only (no variables, no computed expressions).
 
 ```
 [1, 2, 3]
 ['a', 'b', 'c']
 [1, 'mixed', true, null]
-[]                  # liste vide
-[-1, -2.5]          # négatifs OK (folding du - dans le parser)
+[]                  # empty list
+[-1, -2.5]          # negatives OK (the - is folded in the parser)
 ```
 
-**Restrictions** :
-- Pas d'expressions calculées : `[1+1, 2]` lève
-- Pas de variables : `[a, b]` lève (sauf via une fonction custom qui construit une liste)
-- Pas de virgule trailing : `[1, 2,]` lève
-- `[]` interdit comme opérande droite d'un `IN` (cas dégénéré sans intérêt)
+**Restrictions**:
+- No computed expressions: `[1+1, 2]` throws
+- No variables: `[a, b]` throws (except via a custom function that builds a list)
+- No trailing comma: `[1, 2,]` throws
+- `[]` is forbidden as the right-hand operand of `IN` (degenerate case with no use)
 
-## Variables (chemins)
+## Variables (paths)
 
-Notation pointée. Chaque segment est un identifiant valide PHP (lettre ou `_` en tête, puis lettres/chiffres/`_`).
+Dot-notation. Each segment is a valid PHP identifier (letter or `_` at the start, then letters/digits/`_`).
 
 ```
 total
@@ -100,150 +100,150 @@ cart.total
 customer.address.country
 ```
 
-**Mots-clés réservés** (insensibles à la casse) : `and`, `or`, `not`, `in`, `true`, `false`, `null`. Un identifiant racine qui correspond à un de ces mots-clés est tokenisé comme mot-clé, donc inaccessible directement :
+**Reserved keywords** (case-insensitive): `and`, `or`, `not`, `in`, `true`, `false`, `null`. A root identifier that matches one of these keywords is tokenized as a keyword and therefore inaccessible directly:
 
 ```
 'In'      →  SyntaxErrorException
-'user.in' →  OK (le 'in' est un sous-segment, pas la racine)
+'user.in' →  OK (the 'in' is a sub-segment, not the root)
 ```
 
-Pour exposer une donnée avec une clé racine en conflit, encapsulez-la sous un parent.
+To expose data with a root key that collides, wrap it under a parent.
 
-**Pas de wildcards, ni d'indexation crochet, ni de méthodes** : `cart.items[0]`, `cart.items.0`, `cart.method()` ne sont pas supportés. Voir `context.md` pour les détails sur la résolution.
+**No wildcards, bracket indexing, or method calls**: `cart.items[0]`, `cart.items.0`, `cart.method()` are not supported. See `context.md` for details on resolution.
 
-## Opérateurs
+## Operators
 
-Liste complète, du moins prioritaire au plus prioritaire. Précédences **alignées sur PHP**, à une exception près et assumée : `??` est placé *au-dessus* de AND/OR (en PHP il est en-dessous de `&&`/`||`). Voir la section `??` ci-dessous.
+Full list, from lowest to highest precedence. Precedences **aligned with PHP**, with one explicit exception: `??` is placed *above* AND/OR (in PHP it is below `&&`/`||`). See the `??` section below.
 
-| # | Précédence | Opérateurs | Type | Associativité |
+| # | Precedence | Operators | Type | Associativity |
 |---|---|---|---|---|
-| 0 | ternaire | `?:` | ternaire | droite |
-| 1 | OR logique | `OR`, `\|\|` | binaire | gauche |
-| 2 | AND logique | `AND`, `&&` | binaire | gauche |
-| 3 | null-coalesce | `??` | binaire | droite |
-| 4 | comparaison / membership | `=` (`==`), `!=`, `>`, `>=`, `<`, `<=`, `IN`, `NOT IN` | binaire | non-associatif |
-| 5 | additif | `+`, `-` | binaire | gauche |
-| 6 | multiplicatif | `*`, `/`, `%` | binaire | gauche |
-| 7 | NOT | `NOT` | unaire préfixe | droite (récursif) |
-| 8 | unaire | `-`, `+` | unaire préfixe | droite (récursif) |
+| 0 | ternary | `?:` | ternary | right |
+| 1 | logical OR | `OR`, `\|\|` | binary | left |
+| 2 | logical AND | `AND`, `&&` | binary | left |
+| 3 | null-coalesce | `??` | binary | right |
+| 4 | comparison / membership | `=` (`==`), `!=`, `>`, `>=`, `<`, `<=`, `IN`, `NOT IN` | binary | non-associative |
+| 5 | additive | `+`, `-` | binary | left |
+| 6 | multiplicative | `*`, `/`, `%` | binary | left |
+| 7 | NOT | `NOT` | unary prefix | right (recursive) |
+| 8 | unary | `-`, `+` | unary prefix | right (recursive) |
 
-Les mots-clés `AND`, `OR`, `NOT`, `IN` sont **insensibles à la casse** : `and`/`AND`/`And`/`aNd` sont équivalents. Les alternatives symboliques `&&` et `||` sont acceptées pour AND/OR.
+The keywords `AND`, `OR`, `NOT`, `IN` are **case-insensitive**: `and`/`AND`/`And`/`aNd` are all equivalent. The symbolic alternatives `&&` and `||` are accepted for AND/OR.
 
-### Égalité (`=`, `==`, `!=`)
+### Equality (`=`, `==`, `!=`)
 
-`=` et `==` sont équivalents (le parser les normalise tous deux en `=`). Égalité **adaptée** :
-- Numériques (int et float) : comparaison sur la valeur, sans piège de typage (`5 = 5.0` → `true`)
-- Autres types : strict (`'5' = 5` → `TypeErrorException`)
-- `null = null` → `true`, `null = <anything>` → `false` — sans exception, **sauf** si l'autre opérande est NaN/INF (rejeté avant le raccourci null, cf. politique générale ci-dessous)
-- **Arrays interdits** : `[1,2] = [1,2]` lève (utiliser `IN` pour la membership)
-- **NaN/INF** : rejet (cf. politique générale)
+`=` and `==` are equivalent (the parser normalizes both to `=`). **Adapted equality**:
+- Numerics (int and float): value comparison, no type traps (`5 = 5.0` → `true`)
+- Other types: strict (`'5' = 5` → `TypeErrorException`)
+- `null = null` → `true`, `null = <anything>` → `false` — no exception, **except** if the other operand is NaN/INF (rejected before the null shortcut, per the general policy below)
+- **Arrays forbidden**: `[1,2] = [1,2]` throws (use `IN` for membership)
+- **NaN/INF**: rejected (per the general policy)
 
-### Comparaison d'ordre (`>`, `>=`, `<`, `<=`)
+### Order comparison (`>`, `>=`, `<`, `<=`)
 
-- Numériques entre eux : OK
-- Chaînes entre elles : OK (ordre lexicographique). Permet de comparer des dates `Y-m-d` correctement.
-- Mélange numérique/chaîne : `TypeErrorException`
-- Booléens, null, arrays : `TypeErrorException`
+- Numerics with numerics: OK
+- Strings with strings: OK (lexicographic order). Allows correct comparison of `Y-m-d` dates.
+- Mixed numeric/string: `TypeErrorException`
+- Booleans, null, arrays: `TypeErrorException`
 
 ### IN / NOT IN
 
-`x IN list` teste l'appartenance.
+`x IN list` tests membership.
 
-**Côté droit** : une liste littérale `[...]`, une variable de type liste, ou une fonction qui en retourne une. **Pas** un scalaire (`x IN 5` lève en parse).
+**Right-hand side**: a literal list `[...]`, a list-type variable, or a function returning one. **Not** a scalar (`x IN 5` throws at parse time).
 
-**Liste vide** : `x IN [...]` avec liste vide à droite est interdit syntaxiquement (sur les littéraux `[]`). Sur une variable qui se résout en liste vide à l'évaluation, renvoie `false` — c'est une donnée valide, pas une erreur. Cette distinction est délibérée : une liste vide littérale dans le code est toujours un bug de l'auteur de l'expression, tandis qu'une liste vide en runtime est une donnée légitime (par exemple `tags = []` quand un article n'a aucun tag).
+**Empty list**: `x IN [...]` with an empty literal list is syntactically forbidden. A variable that resolves to an empty list at evaluation time returns `false` — that is valid data, not an error. This distinction is intentional: an empty literal list in code is always an author mistake, while an empty list at runtime is legitimate data (e.g. `tags = []` when an article has no tags).
 
-**Côté gauche scalaire** : comparaison élément-par-élément via `looseEqual` (donc même règles que `=`).
+**Scalar left-hand side**: element-by-element comparison via `looseEqual` (same rules as `=`).
 
-**Côté gauche tableau** (sémantique duale) :
-1. **Pré-passe** : test si le subject **est** un élément de la liste (comparaison stricte de tableaux). `[1,2] IN [[1,2], 3]` → `true`.
-2. **Fallback intersection** : test si **au moins un élément** du subject est aussi dans la liste. `[1,2] IN [1,2,3]` → `true`, `[4,5] IN [1,2,3]` → `false`.
+**Array left-hand side** (dual semantics):
+1. **Pre-pass**: test if the subject **is** an element of the list (strict array comparison). `[1,2] IN [[1,2], 3]` → `true`.
+2. **Fallback intersection**: test if **at least one element** of the subject is also in the list. `[1,2] IN [1,2,3]` → `true`, `[4,5] IN [1,2,3]` → `false`.
 
 ```
-'php' IN tags                       # tags contient-il 'php' ?
-cart.tags IN ['promo', 'vip']       # le tableau cart.tags est-il l'un des deux ? OU partage-t-il un élément ?
+'php' IN tags                       # does tags contain 'php'?
+cart.tags IN ['promo', 'vip']       # is cart.tags one of the two? OR does it share an element?
 5 NOT IN [1, 2, 3]                  # → true
 ```
 
-**Politique d'erreurs de type** : si **aucune** comparaison de paire n'a été comparable (toutes les paires lèvent TypeError), l'erreur est re-levée. Si **au moins une** paire a pu être comparée sans match, retourne `false`. Empêche de transformer une erreur silencieuse en `false`.
+**Type error policy**: if **no** pair comparison was possible (all pairs throw TypeError), the error is re-thrown. If **at least one** pair could be compared without a match, returns `false`. Prevents silently turning an error into `false`.
 
-### Arithmétique (`+`, `-`, `*`, `/`, `%`)
+### Arithmetic (`+`, `-`, `*`, `/`, `%`)
 
-- Opérandes : strictement `int` ou `float`. Tout autre type lève `TypeErrorException` (pas de coercition de string numérique, pas de `null` → `0`).
-- **Overflow** : si deux `int` produisent un résultat qui sort de `PHP_INT_MAX` (PHP downcasterait en `float`), levé. Pour accepter la perte de précision, caster explicitement en `float` : `(a + 0.0) + b`.
-- **NaN/INF** : rejetés à toute opération arithmétique.
-- **Division par zéro** : `1 / 0` lève `TypeErrorException` (message "Division by zero"). `1 % 0` aussi.
-- **Modulo** : `int % int` → `int` (modulo PHP standard). Si au moins un `float`, utilise `fmod`.
+- Operands: strictly `int` or `float`. Any other type throws `TypeErrorException` (no coercion of numeric strings, no `null` → `0`).
+- **Overflow**: if two `int` values produce a result outside `PHP_INT_MAX` (PHP would downcast to `float`), throws. To accept the precision loss, cast explicitly to `float`: `(a + 0.0) + b`.
+- **NaN/INF**: rejected on any arithmetic operation.
+- **Division by zero**: `1 / 0` throws `TypeErrorException` (message "Division by zero"). `1 % 0` as well.
+- **Modulo**: `int % int` → `int` (standard PHP modulo). If at least one `float`, uses `fmod`.
 
 ### `??` (null-coalescing)
 
-`a ?? b` :
-- Si `a` est résolu et non-null : renvoie `a`
-- Si `a` est manquant (mode strict + mode safe et explain) **ou** `a = null` : renvoie `b`
+`a ?? b`:
+- If `a` is resolved and non-null: returns `a`
+- If `a` is missing (strict mode + safe mode and explain) **or** `a = null`: returns `b`
 
-Précédence intentionnellement **basse** (entre AND et la comparaison). L'alignement sur PHP est **partiel et assumé** :
+Intentionally **low precedence** (between AND and comparison). Alignment with PHP is **partial and deliberate**:
 
 ```
-a ?? b == c     →  a ?? (b == c)         (le == est appliqué d'abord — comme en PHP)
-NOT a ?? b      →  (NOT a) ?? b          (NOT est très haute précédence — comme en PHP)
+a ?? b == c     →  a ?? (b == c)         (== is applied first — as in PHP)
+NOT a ?? b      →  (NOT a) ?? b          (NOT has very high precedence — as in PHP)
 1 ?? 2 > 5      →  1 ?? (2 > 5)          →  1 ?? false  →  1
-a ?? b AND c    →  (a ?? b) AND c        (⚠ DIVERGE de PHP — voir ci-dessous)
+a ?? b AND c    →  (a ?? b) AND c        (⚠ DIVERGES from PHP — see below)
 ```
 
-**Divergence assumée vs PHP sur AND/OR** : en PHP, `??` est *plus bas* que `&&`/`||` (donc `a ?? b && c` y vaut `a ?? (b && c)`). Ici, `??` est *au-dessus* de AND/OR (donc `a ?? b AND c` vaut `(a ?? b) AND c`). Exemple concret de l'écart :
+**Deliberate divergence from PHP on AND/OR**: in PHP, `??` is *lower* than `&&`/`||` (so `a ?? b && c` means `a ?? (b && c)`). Here, `??` is *above* AND/OR (so `a ?? b AND c` means `(a ?? b) AND c`). Concrete example:
 
 ```
-PHP natif :  true ?? false AND false   →  true    (true ?? (false AND false))
-php-ruler  :  true ?? false AND false   →  false   ((true ?? false) AND false)
+Native PHP:  true ?? false AND false   →  true    (true ?? (false AND false))
+php-ruler:   true ?? false AND false   →  false   ((true ?? false) AND false)
 ```
 
-La raison : PHP a en réalité **deux étages** d'opérateurs logiques (`&&`/`||` hauts, `and`/`or` tout en bas, sous l'affectation et le ternaire). Cette lib fusionne les formes mot et symbole en un seul étage AND/OR (look SQL-like), elle ne peut donc pas reproduire la position exacte de `??` vis-à-vis des deux étages PHP simultanément. On garde `??` « serré » (au-dessus de AND/OR) pour que `flag ?? defaut` se lise comme une unité autonome dans une règle booléenne plus large.
+The reason: PHP actually has **two tiers** of logical operators (`&&`/`||` high, `and`/`or` very low, below assignment and ternary). This library merges the word and symbol forms into a single AND/OR tier (SQL-like), which cannot simultaneously reproduce `??`'s exact position relative to both PHP tiers. `??` is kept "tight" (above AND/OR) so that `flag ?? default` reads as a self-contained unit in a broader boolean rule.
 
-**Décision figée et délibérée** : pour `??` vs comparaison et `??` vs NOT, on suit PHP. Pour `??` vs AND/OR, on diverge volontairement. Dans tous les cas, qui veut un autre regroupement parenthèse explicitement : `a ?? (b AND c)`, `(a ?? b) == c`.
+**Frozen and deliberate decision**: for `??` vs comparison and `??` vs NOT, PHP is followed. For `??` vs AND/OR, divergence is intentional. In all cases, parenthesize explicitly for different grouping: `a ?? (b AND c)`, `(a ?? b) == c`.
 
-### Ternaire (`? :`)
+### Ternary (`? :`)
 
-Précédence la plus basse. **Right-associative** :
+Lowest precedence. **Right-associative**:
 
 ```
 a ? b ? c : d : e        →  a ? (b ? c : d) : e
 ```
 
-La condition doit être strictement `bool`. Pas de coercition truthy/falsy.
+The condition must be strictly `bool`. No truthy/falsy coercion.
 
 ```
-a ? 'yes' : 'no'        # OK si a est bool
+a ? 'yes' : 'no'        # OK if a is bool
 5 ? 'yes' : 'no'        # TypeErrorException
 ```
 
-Pas de variante "Elvis" (`a ?: b` interdit) : il faut écrire `a ?? b` (avec sémantique null-coalescing) ou `condition ? value : default` explicite.
+No "Elvis" variant (`a ?: b` is not supported): write `a ?? b` (with null-coalescing semantics) or an explicit `condition ? value : default`.
 
 ### NOT
 
-Précédence très haute (juste sous l'unaire `-` / `+`), **alignée sur PHP** `!`. Opérande strictement `bool`.
+Very high precedence (just below unary `-` / `+`), **aligned with PHP** `!`. Operand must be strictly `bool`.
 
 ```
-NOT a               →  négation de a
+NOT a               →  negation of a
 NOT a == b          →  (NOT a) == b
 NOT a AND b         →  (NOT a) AND b
-NOT a + b           →  (NOT a) + b   (cohérent avec !$a + $b en PHP)
-NOT NOT a           →  NOT (NOT a)   (récursif)
+NOT a + b           →  (NOT a) + b   (consistent with !$a + $b in PHP)
+NOT NOT a           →  NOT (NOT a)   (recursive)
 ```
 
-`NOT IN` (combinaison spéciale) est traitée à part : c'est un opérateur de niveau "comparaison" (4), pas un `NOT` suivi d'un `IN`.
+`NOT IN` (special combination) is treated separately: it is a "comparison" level operator (4), not a `NOT` followed by an `IN`.
 
-### Unaire `-` / `+`
+### Unary `-` / `+`
 
-Plus haute précédence non-fonctionnelle. Récursif :
+Highest non-function precedence. Recursive:
 
 ```
---x   →  -(-x)   (mathématiquement correct)
+--x   →  -(-x)   (mathematically correct)
 ++x   →  +(+x)   (no-op)
 ```
 
-`-` exige opérande `int|float`. **Pas** de coercition : `-null`, `-true`, `-'5'` lèvent.
+`-` requires an `int|float` operand. **No coercion**: `-null`, `-true`, `-'5'` all throw.
 
-## Appels de fonction
+## Function calls
 
 ```
 fn()
@@ -252,57 +252,57 @@ fn(arg1, arg2)
 fn(arg1, fn2(arg2), expr + 1)
 ```
 
-Les arguments sont évalués **avant** l'appel (eager). L'ordre est gauche à droite.
+Arguments are evaluated **before** the call (eager). Order is left to right.
 
-L'arity et les types attendus dépendent de la fonction. Voir `functions.md` pour le catalogue et les politiques.
+Arity and expected types depend on the function. See `functions.md` for the catalogue and policies.
 
-**Mauvaise arity** → `TypeErrorException` (la lib valide, contrairement à PHP qui ignore silencieusement les args en trop).
+**Wrong arity** → `TypeErrorException` (the library validates, unlike PHP which silently ignores extra arguments).
 
-## Parenthèses
+## Parentheses
 
-`( ... )` pour grouper une sous-expression. Toujours autorisé, jamais nécessaire (la précédence est définie sans ambiguïté).
+`( ... )` to group a sub-expression. Always allowed, never required (precedence is defined without ambiguity).
 
 ```
 (a + b) * c
-NOT (a AND b)            # nécessaire si on veut "pas (a et b)"
-(a ?? b) == c            # nécessaire pour court-circuiter la précédence basse de ??
+NOT (a AND b)            # needed if you want "not (a and b)"
+(a ?? b) == c            # needed to override the low precedence of ??
 ```
 
 ## Whitespace
 
-Les espaces, tabs, sauts de ligne sont **ignorés** entre tokens. Le whitespace **dans** un littéral chaîne est préservé.
+Spaces, tabs, and newlines are **ignored** between tokens. Whitespace **inside** a string literal is preserved.
 
-**NBSP** (U+00A0, non-breaking space) est traité comme un espace ordinaire **hors littéraux quotés**. Dans les littéraux, il est préservé. C'est utile pour les inputs copiés-collés depuis des sources rich-text (Word, web).
+**NBSP** (U+00A0, non-breaking space) is treated as an ordinary space **outside quoted literals**. Inside literals, it is preserved. This is useful for inputs copy-pasted from rich-text sources (Word, web).
 
-Autres whitespaces Unicode (em-space, thin space, etc.) : **non supportés** côté code. C'est un choix délibéré : le NBSP est le seul whitespace Unicode rencontré en pratique dans les inputs copiés-collés. Étendre la liste aurait un coût de maintenance pour un gain quasi nul. Si rencontrés hors littéral, ces caractères tomberont en token "unknown" et lèveront `SyntaxErrorException`.
+Other Unicode whitespace (em-space, thin space, etc.): **not supported** in code. This is a deliberate choice: NBSP is the only Unicode whitespace encountered in practice in copy-pasted inputs. Extending the list would add maintenance cost for near-zero gain. If encountered outside a literal, these characters will fall through as an "unknown" token and throw `SyntaxErrorException`.
 
-## Sémantique de typage
+## Type semantics
 
-### Aucune coercition silencieuse
+### No silent coercion
 
-Le langage est **strict**. Aucun de ces classiques de PHP n'est accepté :
+The language is **strict**. None of these PHP classics are accepted:
 
-| Expression | Comportement |
+| Expression | Behavior |
 |---|---|
-| `"false" AND true` | `TypeErrorException` (string n'est pas bool) |
-| `5 AND 10` | `TypeErrorException` (int n'est pas bool) |
-| `null + 1` | `TypeErrorException` (null n'est pas un nombre) |
-| `'5' + 1` | `TypeErrorException` (string n'est pas un nombre) |
-| `true = 1` | `TypeErrorException` (bool et int ne sont pas comparables) |
+| `"false" AND true` | `TypeErrorException` (string is not bool) |
+| `5 AND 10` | `TypeErrorException` (int is not bool) |
+| `null + 1` | `TypeErrorException` (null is not a number) |
+| `'5' + 1` | `TypeErrorException` (string is not a number) |
+| `true = 1` | `TypeErrorException` (bool and int are not comparable) |
 
-**Exception** : la "loose equality" sur numériques tolère `int` vs `float` (`5 = 5.0` → `true`). C'est utile en pratique : un calcul `int` et un calcul `float` produisent souvent des valeurs égales sémantiquement.
+**Exception**: "loose equality" on numerics tolerates `int` vs `float` (`5 = 5.0` → `true`). This is useful in practice: an `int` calculation and a `float` calculation often produce semantically equal values.
 
-### NaN et INF interdits dans le pipeline
+### NaN and INF forbidden in the pipeline
 
-Aucune opération ne peut produire ou propager NaN ou INF silencieusement. Toute **participation à un opérateur** (arithmétique, comparaison, égalité, `-` unaire) lève `TypeErrorException`. En revanche, une valeur NaN/INF venant du contexte ou d'une fonction custom **peut transiter** jusqu'à `is_finite()` tant qu'elle n'entre pas dans un opérateur — c'est précisément ce qui rend `is_finite()` utilisable. C'est la seule façon de les **inspecter**.
+No operation may produce or silently propagate NaN or INF. Any **participation in an operator** (arithmetic, comparison, equality, unary `-`) throws `TypeErrorException`. However, a NaN/INF value coming from the context or from a custom function **can transit** until `is_finite()` as long as it does not enter an operator — that is precisely what makes `is_finite()` usable. It is the only way to **inspect** them.
 
-### Variables manquantes
+### Missing variables
 
-En mode strict (`evaluate`), une variable absente lève `UnknownVariableException`. En mode safe et explain, l'absence est collectée. Voir les docs correspondantes.
+In strict mode (`evaluate`), a missing variable throws `UnknownVariableException`. In safe mode and explain mode, the absence is collected. See the respective docs.
 
-## Exemples d'expressions
+## Expression examples
 
-### Règles de panier
+### Cart rules
 
 ```
 cart.total > 100
@@ -311,7 +311,7 @@ cart.total > 100 OR (customer.loyalty.years > 2 AND cart.items > 0)
 cart.country IN ['FR', 'BE', 'CH']
 ```
 
-### Calculs
+### Calculations
 
 ```
 cart.subtotal * 1.2
@@ -320,14 +320,14 @@ clamp(discount, 0, 100)
 pow(base, 2) + 1
 ```
 
-### Avec dates
+### With dates
 
 ```
 year(today()) > 2025
 dateDiff(today(), cart.created) <= 30
 ```
 
-### Avec ternaire et coalesce
+### With ternary and coalesce
 
 ```
 customer.vip ? 'gold' : 'silver'
@@ -335,87 +335,87 @@ customer.vip ? 'gold' : 'silver'
 customer.score ?? 50
 ```
 
-### Avec NOT IN
+### With NOT IN
 
 ```
 customer.country NOT IN ['IR', 'KP']
 ```
 
-### Avec ?? précédence (attention)
+### With `??` precedence (watch out)
 
 ```
-# Ce qu'on lit naturellement :  "(a ?? 0) > 100"
-# Mais sans parenthèses :        "a ?? (0 > 100)"  →  "a ?? false"  →  a (ou false si a null)
+# What you might read naturally: "(a ?? 0) > 100"
+# But without parentheses:        "a ?? (0 > 100)"  →  "a ?? false"  →  a (or false if a is null)
 
-(a ?? 0) > 100      # forme correcte
+(a ?? 0) > 100      # correct form
 ```
 
-## Décisions de design
+## Design decisions
 
-### Surface volontairement limitée
+### Deliberately limited surface
 
-Pas d'affectation, pas de fonctions définies dans l'expression, pas d'effets de bord syntaxiques, pas de structures de contrôle. Le langage est **dévalu** : pas un sous-ensemble de PHP, mais un langage d'expressions à part.
+No assignment, no functions defined in the expression, no syntactic side effects, no control structures. The language is **intentionally narrow**: not a PHP subset, but a dedicated expression language.
 
-### Alignement sur PHP pour la précédence et la sémantique
+### PHP alignment for precedence and semantics
 
-Quand une décision avait plusieurs options défendables (par exemple `??` au-dessus ou en-dessous des comparaisons), c'est PHP qui a tranché. Justification : la cible utilisateur est un développeur PHP. La surprise minimale prime sur la "lecture naturelle" hypothétique.
+When a decision had multiple defensible options (e.g. `??` above or below comparisons), PHP was the tiebreaker. Rationale: the target user is a PHP developer. Minimal surprise takes precedence over hypothetical "natural reading".
 
-**Une exception assumée** : la position de `??` vis-à-vis de AND/OR diverge de PHP (voir la section `??`). Elle découle du choix de fusionner les deux étages logiques de PHP (`&&`/`||` et `and`/`or`) en un seul, incompatible avec la reproduction exacte de la position de `??`.
+**One deliberate exception**: the position of `??` relative to AND/OR diverges from PHP (see the `??` section). This follows from the choice to merge PHP's two logical tiers (`&&`/`||` and `and`/`or`) into a single one, which is incompatible with exactly reproducing `??`'s position.
 
-### Délimiteurs de chaîne : `'` ET `"`
+### String delimiters: `'` AND `"`
 
-Les deux sont acceptés et **équivalents**. C'est rare dans les langages d'expression mais utile pour quoter une chaîne contenant un des deux : `"L'Oréal"` plutôt que `'L''Oréal'`.
+Both are accepted and **equivalent**. Rare in expression languages but useful for quoting a string containing one of the two: `"L'Oréal"` rather than `'L''Oréal'`.
 
-### Mots-clés insensibles à la casse
+### Case-insensitive keywords
 
-`AND`, `and`, `And` sont équivalents. Choix stylistique pour un look "SQL-like" qui est familier aux utilisateurs métier.
+`AND`, `and`, `And` are equivalent. A stylistic choice for an SQL-like look that is familiar to business users.
 
-Conséquence : les identifiants `and`, `or`, `not`, `in` sont inaccessibles en racine (voir Limitations).
+Consequence: the identifiers `and`, `or`, `not`, `in` are inaccessible at the root level (see Limitations).
 
-### `?:` non supporté (Elvis)
+### `?:` not supported (Elvis)
 
-Pas d'opérateur Elvis (`a ?: b` qui prend `a` si truthy, sinon `b`). Justifications :
-- Repose sur la coercition truthy/falsy, qui est rejetée partout ailleurs
-- Risque de confusion avec `??` (deux opérateurs similaires mais subtilement différents)
-- L'usage légitime est couvert par `??` (null-coalescing) ou un ternaire explicite
+No Elvis operator (`a ?: b` which takes `a` if truthy, otherwise `b`). Rationale:
+- Relies on truthy/falsy coercion, which is rejected everywhere else
+- Risk of confusion with `??` (two similar but subtly different operators)
+- The legitimate use case is covered by `??` (null-coalescing) or an explicit ternary
 
-### Pas de short-circuit dans `??`, AND, OR pour les types
+### No short-circuit on types for `??`, AND, OR
 
-Bien que `??` court-circuite quand la gauche est non-null, la gauche **doit quand même être un type valide**. Idem pour AND/OR : `5 AND b` lève même si la droite aurait pu court-circuiter sémantiquement.
+Although `??` short-circuits when the left is non-null, the left **must still be a valid type**. Same for AND/OR: `5 AND b` throws even if the right side might have short-circuited semantically.
 
-## Limitations connues
+## Known limitations
 
-Récap des limitations syntaxiques évoquées ci-dessus :
+Summary of the syntactic limitations mentioned above:
 
-- Mots-clés réservés inaccessibles en racine
-- Pas de wildcards, d'indexation crochet, ni d'accès méthode
-- Listes : que des littéraux primitifs, pas d'expressions
-- Pas d'échappement dans les chaînes hors quote doublée
-- Pas d'interpolation
-- Pas de date littérale (utilisez une chaîne `'2026-01-15'`)
-- Pas de regex
-- Pas d'opérateur Elvis
-- Pas de `**` (exponentiation), à utiliser `pow()`
-- Pas de bitwise (`&`, `|`, `^`, `<<`, `>>`)
+- Reserved keywords inaccessible at the root level
+- No wildcards, bracket indexing, or method access
+- Lists: only primitive literals, no expressions
+- No escaping in strings other than doubled quote
+- No interpolation
+- No date literals (use a string `'2026-01-15'`)
+- No regex
+- No Elvis operator
+- No `**` (exponentiation), use `pow()`
+- No bitwise operators (`&`, `|`, `^`, `<<`, `>>`)
 
-## ⚠️ Pièges courants
+## ⚠️ Common pitfalls
 
-### Précédence de `??` — plus basse que les comparaisons
+### `??` precedence — lower than comparisons
 
-`??` a une précédence **inférieure** aux comparaisons (aligné sur PHP). Conséquence :
-
-```
-a ?? 0 > 100       →  a ?? (0 > 100)    →  a ?? false     ← PAS (a ?? 0) > 100
-(a ?? 0) > 100     →  forme correcte
-```
-
-Règle pratique : dès que vous combinez `??` avec un opérateur de comparaison, mettez le `??` entre parenthèses.
-
-### `NOT a ?? b` — NOT a une précédence très haute
+`??` has **lower precedence** than comparisons (aligned with PHP). Consequence:
 
 ```
-NOT a ?? b         →  (NOT a) ?? b      ← PAS NOT (a ?? b)
-NOT (a ?? b)       →  forme correcte si c'est l'intention
+a ?? 0 > 100       →  a ?? (0 > 100)    →  a ?? false     ← NOT (a ?? 0) > 100
+(a ?? 0) > 100     →  correct form
 ```
 
-Cela déroute souvent parce qu'on lit `NOT a ?? b` comme "NOT (a si non-null sinon b)". Ce n'est pas ce que le parser fait. Parenthéser si l'intention est `NOT (a ?? b)`.
+Practical rule: whenever you combine `??` with a comparison operator, wrap the `??` in parentheses.
+
+### `NOT a ?? b` — NOT has very high precedence
+
+```
+NOT a ?? b         →  (NOT a) ?? b      ← NOT NOT (a ?? b)
+NOT (a ?? b)       →  correct form if that is the intent
+```
+
+This is often surprising because `NOT a ?? b` reads as "NOT (a if non-null, otherwise b)". That is not what the parser does. Parenthesize if the intent is `NOT (a ?? b)`.

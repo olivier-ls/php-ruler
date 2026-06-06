@@ -1,15 +1,15 @@
-# Résolution d'alias
+# Alias Resolution
 
-## Vue d'ensemble
+## Overview
 
-Le résolveur d'alias est un composant **indépendant** qui traduit entre une représentation "humaine" et une représentation "technique" des expressions.
+The alias resolver is a **standalone** component that translates between a "human-readable" and a "technical" representation of expressions.
 
-Cas d'usage type : un backoffice où un utilisateur métier édite des règles en langage naturel (`"customer group = 'vip' AND cart amount > 100"`) mais où les données du contexte sont structurées techniquement (`customer.group`, `cart.total`). L'AliasResolver fait le pont dans les deux sens :
+Typical use case: a back-office where a business user edits rules in natural language (`"customer group = 'vip' AND cart amount > 100"`) while the context data is technically structured (`customer.group`, `cart.total`). The `AliasResolver` bridges the gap in both directions:
 
-- **Saisie utilisateur** → `humanToExpression()` → expression technique → évaluation
-- **Expression technique stockée** → `expressionToHuman()` → affichage utilisateur
+- **User input** → `humanToExpression()` → technical expression → evaluation
+- **Stored technical expression** → `expressionToHuman()` → displayed to user
 
-L'AliasResolver est **autonome** : il ne fait que de la substitution textuelle ciblée. Il n'évalue pas, ne parse pas, ne valide pas la sémantique. Il ne nécessite pas d'`ExpressionEvaluator`.
+The `AliasResolver` is **self-contained**: it only performs targeted text substitution. It does not evaluate, parse, or validate semantics. It does not require an `ExpressionEvaluator` instance.
 
 ## API
 
@@ -28,11 +28,11 @@ final class AliasResolver
 }
 ```
 
-## Comportements
+## Behaviors
 
 ### `add(string $path, string $alias): self`
 
-Enregistre une correspondance bidirectionnelle entre un chemin technique et un alias humain.
+Registers a bidirectional mapping between a technical path and a human-readable alias.
 
 ```php
 $resolver = new AliasResolver();
@@ -42,57 +42,57 @@ $resolver
     ->add('order.shipping', 'shipping cost');
 ```
 
-**Règles de validation de l'alias** :
+**Alias validation rules**:
 
-| Règle | Si violée |
+| Rule | If violated |
 |---|---|
-| Pas de guillemets (`'` ou `"`) | `InvalidArgumentException` |
-| Pas vide ni whitespace-seulement | `InvalidArgumentException` |
-| Pas d'espaces de tête ni de queue | `InvalidArgumentException` (suggère trim) |
-| Caractères autorisés : lettres ASCII, chiffres, underscore, whitespace interne, Unicode (`\x{0080}-\x{FFFF}`) | `InvalidArgumentException` |
-| Ne doit pas correspondre (insensible à la casse) à un mot-clé : `and`, `or`, `not`, `in`, `true`, `false`, `null` | `InvalidArgumentException` |
-| Doit être unique : un même alias ne peut pas pointer vers deux chemins différents | `InvalidArgumentException` |
+| No quotes (`'` or `"`) | `InvalidArgumentException` |
+| Not empty or whitespace-only | `InvalidArgumentException` |
+| No leading or trailing spaces | `InvalidArgumentException` (suggests trim) |
+| Allowed characters: ASCII letters, digits, underscores, internal whitespace, Unicode (`\x{0080}-\x{FFFF}`) | `InvalidArgumentException` |
+| Must not match (case-insensitive) a keyword: `and`, `or`, `not`, `in`, `true`, `false`, `null` | `InvalidArgumentException` |
+| Must be unique: the same alias cannot point to two different paths | `InvalidArgumentException` |
 
-**Caractères interdits explicitement** (au-delà du whitelist) :
-- `.` (pointerait collision avec les chemins dot-notation)
-- `-` (ambigu avec l'opérateur de soustraction)
-- Toute ponctuation, opérateur, ou métacaractère de regex (produirait une expression mal formée après substitution)
+**Explicitly forbidden characters** (beyond the whitelist):
+- `.` (would collide with dot-notation paths)
+- `-` (ambiguous with the subtraction operator)
+- Any punctuation, operator, or regex metacharacter (would produce a malformed expression after substitution)
 
 ```php
-$resolver->add('cart.total', 'cart-total');    // InvalidArgumentException — tiret interdit
-$resolver->add('cart.total', 'and');           // InvalidArgumentException — mot-clé
+$resolver->add('cart.total', 'cart-total');    // InvalidArgumentException — hyphen not allowed
+$resolver->add('cart.total', 'and');           // InvalidArgumentException — keyword
 $resolver->add('cart.total', "cart's total");  // InvalidArgumentException — apostrophe
-$resolver->add('cart.total', 'AND');           // InvalidArgumentException — mot-clé insensible à la casse
+$resolver->add('cart.total', 'AND');           // InvalidArgumentException — case-insensitive keyword
 ```
 
-### Asymétrie sur la ré-inscription
+### Asymmetry on re-registration
 
-**Un alias** ne peut pointer que vers **un seul** chemin. Tenter de réutiliser un alias pour un chemin différent lève.
+**An alias** can only point to **one** path. Attempting to reuse an alias for a different path throws.
 
-**Un chemin** peut être ré-inscrit avec un **nouvel alias**. Dans ce cas, l'alias précédent est **silencieusement supprimé** (last-write-wins) :
+**A path** can be re-registered with a **new alias**. In this case, the previous alias is **silently removed** (last-write-wins):
 
 ```php
 $resolver->add('cart.total', 'cart amount');
-$resolver->add('cart.total', 'cart total');     // OK, 'cart amount' est supprimé
-// 'cart.total' ↔ 'cart total' désormais
+$resolver->add('cart.total', 'cart total');     // OK, 'cart amount' is removed
+// 'cart.total' ↔ 'cart total' from now on
 
 $resolver->add('order.total', 'cart total');    // InvalidArgumentException
-// L'alias 'cart total' est déjà utilisé par 'cart.total'
+// The alias 'cart total' is already used by 'cart.total'
 ```
 
-Justification : les chemins sont l'identifiant canonique. La lib est conçue pour être configurée une fois au bootstrap, donc la ré-inscription d'un chemin est une décision explicite du développeur — pas besoin de protection runtime supplémentaire.
+Rationale: paths are the canonical identifier. The library is designed to be configured once at bootstrap, so re-registering a path is an explicit developer decision — no additional runtime protection needed.
 
 ### `remove(string $path): self`
 
-Supprime l'alias associé au chemin. Silencieux si le chemin n'a pas d'alias enregistré.
+Removes the alias associated with the path. Silent if the path has no registered alias.
 
 ### `clear(): self`
 
-Vide toutes les correspondances.
+Clears all mappings.
 
 ### `all(): array`
 
-Retourne le tableau interne `path => alias`.
+Returns the internal `path => alias` array.
 
 ```php
 $resolver->all();
@@ -101,7 +101,7 @@ $resolver->all();
 
 ### `humanToExpression(string $human): string`
 
-Traduit une expression "humaine" en expression "technique" en remplaçant chaque alias trouvé par son chemin associé.
+Translates a "human-readable" expression to a "technical" one by replacing each found alias with its associated path.
 
 ```php
 $resolver->humanToExpression("customer group = 'vip' AND cart amount > 100");
@@ -110,57 +110,57 @@ $resolver->humanToExpression("customer group = 'vip' AND cart amount > 100");
 
 ### `expressionToHuman(string $expression): string`
 
-Traduction inverse — chaque chemin connu est remplacé par son alias.
+Reverse translation — each known path is replaced by its alias.
 
 ```php
 $resolver->expressionToHuman("customer.group = 'vip' AND cart.total > 100");
 // → "customer group = 'vip' AND cart amount > 100"
 ```
 
-### Garanties de substitution
+### Substitution guarantees
 
-Les deux méthodes opèrent par **substitution textuelle**, mais avec plusieurs gardes pour éviter les pièges classiques :
+Both methods operate via **text substitution**, but include several guards to avoid common pitfalls:
 
-#### 1. Pas de remplacement dans les littéraux quotés
+#### 1. No replacement inside quoted literals
 
-L'expression est découpée en segments alternés "hors-quote" / "dans-quote". Seuls les segments hors-quote sont traités.
+The expression is split into alternating segments: "outside quotes" / "inside quotes". Only outside-quote segments are processed.
 
 ```php
 $resolver->add('cart.total', 'cart amount');
 $resolver->humanToExpression("customer.group = 'cart amount'");
-// → "customer.group = 'cart amount'"  ← littéral préservé, PAS remplacé
+// → "customer.group = 'cart amount'"  ← literal preserved, NOT replaced
 ```
 
-#### 2. Word boundary stricte
+#### 2. Strict word boundaries
 
-Les substitutions ne matchent que des occurrences délimitées par autre chose qu'une lettre, chiffre, underscore, point, ou caractère Unicode `\x{0080}-\x{FFFF}` :
+Substitutions only match occurrences delimited by something other than a letter, digit, underscore, dot, or Unicode character `\x{0080}-\x{FFFF}`:
 
 ```php
 $resolver->add('cart.total', 'total');
 $resolver->expressionToHuman('cart.total = subtotal');
-// → 'total = subtotal'  ← "total" remplacé, "subtotal" préservé
+// → 'total = subtotal'  ← "total" replaced, "subtotal" preserved
 
-// Et de l'autre côté :
+// And on the other side:
 $resolver->add('sum', 'total');
 $resolver->humanToExpression('total(x)');
-// → 'total(x)'  ← PAS remplacé : un alias ne peut pas devenir un nom de fonction
+// → 'total(x)'  ← NOT replaced: an alias cannot become a function name
 ```
 
-**Le `(` à droite est explicitement exclu** : un alias représente une variable, pas une fonction. Un alias suivi d'une parenthèse n'est pas substitué.
+**The `(` on the right is explicitly excluded**: an alias represents a variable, not a function. An alias followed by a parenthesis is not substituted.
 
-#### 3. Conscience UTF-8
+#### 3. UTF-8 awareness
 
-Les regex utilisent le mode `/u` et incluent la plage Unicode dans la définition de "frontière de mot". Cela évite les corruptions du type :
+Regexes use `/u` mode and include the Unicode range in the word-boundary definition. This prevents corruption such as:
 
 ```php
-$resolver->add('menu', 'menu');  // (hypothétique)
-// Sans /u et plage Unicode :  'menü' aurait été corrompu en 'menupath' (le 'ü' n'étant pas vu comme une frontière)
-// Avec :                       'menü' est préservé intact
+$resolver->add('menu', 'menu');  // (hypothetical)
+// Without /u and Unicode range: 'menü' would be corrupted
+// With it:                       'menü' is preserved intact
 ```
 
 #### 4. Longest match first
 
-Si plusieurs alias se chevauchent, le plus long est essayé en premier :
+If multiple aliases overlap, the longest is tried first:
 
 ```php
 $resolver
@@ -168,95 +168,95 @@ $resolver
     ->add('a.b',   'customer group');
 
 $resolver->humanToExpression('customer group name = "x" AND customer group = "y"');
-// → 'a.b.c = "x" AND a.b = "y"'  ← 'customer group name' matché avant 'customer group'
+// → 'a.b.c = "x" AND a.b = "y"'  ← 'customer group name' matched before 'customer group'
 ```
 
-#### 5. Casse exacte
+#### 5. Exact case
 
-Les substitutions sont **sensibles à la casse**. Un alias enregistré comme `'Cart Total'` ne match pas `'cart total'` ni `'CART TOTAL'`.
+Substitutions are **case-sensitive**. An alias registered as `'Cart Total'` does not match `'cart total'` or `'CART TOTAL'`.
 
-Justification : les alias sont gérés par les développeurs, pas par les utilisateurs finaux. Une match approximative cacherait des fautes de frappe. Sur l'expression résultante, c'est aussi le Lexer qui rejettera proprement.
+Rationale: aliases are managed by developers, not end users. Approximate matching would hide typos. On the resulting expression, the Lexer will also reject invalid casing cleanly.
 
-#### 6. Gestion d'erreur UTF-8 invalide
+#### 6. Invalid UTF-8 handling
 
-Si l'expression contient des séquences UTF-8 invalides, les méthodes de traduction lèvent `InvalidArgumentException`. Pas de tentative de réparation silencieuse.
+If the expression contains invalid UTF-8 sequences, the translation methods throw `InvalidArgumentException`. No silent repair attempt.
 
-## Décisions de design
+## Design decisions
 
-### Découplage total de l'évaluateur
+### Full decoupling from the evaluator
 
-`AliasResolver` est **indépendant** d'`ExpressionEvaluator`. Pas de dépendance, pas d'instance partagée. Vous pouvez utiliser l'un sans l'autre :
+`AliasResolver` is **independent** of `ExpressionEvaluator`. No dependency, no shared instance. You can use one without the other:
 
 ```php
-// Évaluation sans alias
+// Evaluation without aliases
 $eval->evaluate('cart.total > 100', $ctx);
 
-// Aliasage sans évaluation (par exemple pour stocker une règle "humanisée" en base)
+// Aliasing without evaluation (e.g. to store a "humanized" rule in a database)
 $resolver->expressionToHuman($ruleTechnical);
 ```
 
-C'est délibéré : ce sont deux préoccupations distinctes.
+This is deliberate: these are two separate concerns.
 
-### Substitution textuelle, pas parsing
+### Text substitution, not parsing
 
-Le résolveur ne parse pas. Il fait du remplacement regex avec des gardes. Avantages :
-- Très rapide
-- N'impose pas que l'expression soit syntaxiquement valide pour aliaser/désaliaser (utile pendant la frappe utilisateur dans un éditeur)
-- Symétrique : `humanToExpression(expressionToHuman($x)) === $x` si tous les alias sont connus
+The resolver does not parse. It performs regex replacement with guards. Benefits:
+- Very fast
+- Does not require the expression to be syntactically valid to alias/de-alias (useful during user input in an editor)
+- Symmetric: `humanToExpression(expressionToHuman($x)) === $x` if all aliases are known
 
-Limites :
-- Pas de validation que les chemins/aliasés existent dans le contexte
-- Pas de garantie que le résultat est une expression valide (mais le Lexer/Parser le détectera)
+Limitations:
+- No validation that paths/aliases exist in the context
+- No guarantee that the result is a valid expression (but the Lexer/Parser will detect that)
 
-### Stratégie de découpage cohérente entre composants
+### Consistent splitting strategy across components
 
-La détection de littéraux quotés (pour préserver leur contenu) utilise la même regex que :
+The detection of quoted literals (to preserve their content) uses the same regex as:
 - `Lexer::normalizeNbspOutsideStrings()`
 - `ExpressionEvaluator::canonicalizeForCache()`
 
-Les trois composants sont synchronisés. Si la grammaire des littéraux évolue (par exemple ajout de backticks), il faut mettre à jour les trois sites.
+All three components are synchronized. If the literal grammar evolves (e.g. adding backticks), all three sites must be updated.
 
-### Caractères autorisés volontairement restreints
+### Deliberately restricted allowed characters
 
-Le whitelist n'autorise pas les opérateurs ni la ponctuation. Conséquence : un alias ne peut pas accidentellement contenir un caractère qui produirait une expression invalide après substitution.
+The whitelist does not allow operators or punctuation. As a result, an alias cannot accidentally contain a character that would produce an invalid expression after substitution.
 
-C'est ce qui rend le résolveur fiable malgré sa simplicité : la classe des alias acceptés est suffisamment réduite pour qu'aucune ambiguïté ne puisse apparaître à l'usage.
+This is what makes the resolver reliable despite its simplicity: the set of accepted aliases is narrow enough that no ambiguity can arise in practice.
 
-### Tolérance Unicode dans les alias
+### Unicode tolerance in aliases
 
-Les caractères Unicode `\x{0080}-\x{FFFF}` sont acceptés dans les alias. Cela couvre l'essentiel des langues européennes (accents, ñ, ü...) et asiatiques (CJK basique).
+Unicode characters `\x{0080}-\x{FFFF}` are accepted in aliases. This covers the majority of European languages (accented characters, ñ, ü...) and basic Asian scripts (CJK).
 
-⚠️ Cette plage **n'inclut pas** :
-- Les caractères au-delà du BMP (Basic Multilingual Plane) — émojis, certains caractères asiatiques rares...
-- La normalisation Unicode (NFC vs NFD) — `'café'` en NFC et `'café'` en NFD ne matchent pas, même s'ils s'affichent identiquement
+⚠️ This range **does not include**:
+- Characters beyond the BMP (Basic Multilingual Plane) — emojis, some rare Asian characters...
+- Unicode normalization (NFC vs NFD) — `'café'` in NFC and `'café'` in NFD will not match, even if they display identically.
 
-Pour l'usage backoffice francophone/anglophone visé, c'est largement suffisant. À étendre si besoin pour d'autres alphabets.
+For the targeted French/English back-office use case, this is more than sufficient. Extend if needed for other alphabets.
 
-## Limitations connues
+## Known limitations
 
-### Pas de matching sémantique
+### No semantic matching
 
-Le résolveur ignore le contexte syntaxique. Conséquence : si un alias et un nom de variable légitime collisionnent, le résolveur substitue. Exemple pathologique :
+The resolver ignores syntactic context. As a result, if an alias and a legitimate variable name collide, the resolver substitutes. Pathological example:
 
 ```php
 $resolver->add('a.b', 'foo');
 $resolver->humanToExpression('foo > 5');  // → 'a.b > 5'
 
-// Mais si l'utilisateur avait écrit 'foo' en pensant à une autre variable foo :
-// pas de moyen de distinguer
+// But if the user typed 'foo' meaning a different variable:
+// there is no way to distinguish
 ```
 
-En pratique, ce risque est mitigé par :
-- La validation stricte des alias (pas d'opérateur, pas de caractère ambigu)
-- La convention "les alias sont des mots ou phrases descriptives", très différents des chemins techniques
+In practice, this risk is mitigated by:
+- Strict alias validation (no operators, no ambiguous characters)
+- The convention that "aliases are descriptive words or phrases", very different from technical paths
 
-### Pas d'alias hiérarchiques partiels
+### No partial hierarchical aliases
 
-Si vous aliasez `cart.total` en `'cart total'`, le résolveur ne sait rien de l'alias pour `cart` lui-même (sauf si vous l'enregistrez séparément). Pas de propagation automatique.
+If you alias `cart.total` as `'cart total'`, the resolver knows nothing about an alias for `cart` itself (unless you register it separately). No automatic propagation.
 
-### Aliasage côté backoffice uniquement
+### Back-office-only aliasing
 
-Le résolveur est conçu pour la couche présentation. L'évaluation ne connaît rien des alias. Si vous voulez qu'`evaluate()` accepte directement les alias, traduisez avant.
+The resolver is designed for the presentation layer. The evaluator knows nothing about aliases. If you want `evaluate()` to accept aliases directly, translate first:
 
 ```php
 $human = $userInput;
@@ -264,6 +264,6 @@ $technical = $resolver->humanToExpression($human);
 $result = $eval->evaluate($technical, $context);
 ```
 
-### Pas de cache de traduction
+### No translation cache
 
-Chaque appel à `humanToExpression()` / `expressionToHuman()` re-construit le pattern regex. Pour des traductions massives répétées sur les mêmes alias, un cache externe peut être pertinent — mais en pratique, l'usage typique (une traduction par requête) ne pose pas de problème.
+Each call to `humanToExpression()` / `expressionToHuman()` rebuilds the regex pattern. For repeated bulk translations on the same aliases, an external cache may be appropriate — but in practice, the typical usage (one translation per request) is not a concern.

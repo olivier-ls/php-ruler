@@ -1,18 +1,18 @@
-# Évaluation principale
+# Main Evaluation
 
-## Vue d'ensemble
+## Overview
 
-L'évaluation principale est le point d'entrée le plus courant de la lib : on donne une expression sous forme de chaîne, un contexte (tableau de variables), et on récupère le résultat évalué. C'est le **mode strict** : toute anomalie (variable manquante, erreur de type, division par zéro, etc.) lève une exception.
+Main evaluation is the most common entry point of the library: pass an expression as a string, a context (array of variables), and get back the evaluated result. This is **strict mode**: any anomaly (missing variable, type error, division by zero, etc.) throws an exception.
 
-Pour un mode tolérant qui collecte les variables manquantes au lieu de lever, voir `evaluate-safe.md`.
+For a lenient mode that collects missing variables instead of throwing, see `evaluate-safe.md`.
 
-L'évaluation principale s'utilise via la classe `ExpressionEvaluator` (point d'entrée public de la lib).
+Main evaluation is performed via the `ExpressionEvaluator` class (the library's public entry point).
 
 ## API
 
-Toutes les méthodes sont publiques, exposées sur `ExpressionEvaluator`.
+All methods are public and exposed on `ExpressionEvaluator`.
 
-### Évaluation à partir d'une expression (chaîne)
+### Evaluation from an expression (string)
 
 ```php
 public function evaluate(string $expression, array $context): mixed
@@ -20,7 +20,7 @@ public function evaluateBoolean(string $expression, array $context): bool
 public function evaluateNumeric(string $expression, array $context): float
 ```
 
-### Évaluation à partir d'un AST pré-compilé
+### Evaluation from a pre-compiled AST
 
 ```php
 public function evaluateAst(Node $ast, array $context): mixed
@@ -28,17 +28,17 @@ public function evaluateAstBoolean(Node $ast, array $context): bool
 public function evaluateAstNumeric(Node $ast, array $context): float
 ```
 
-Les variantes `*Ast()` permettent de court-circuiter le Lexer et le Parser quand on a déjà un AST compilé (typiquement via `getAst()` ou `importAst()`, voir `ast-management.md`). Sémantique d'évaluation strictement identique aux variantes "expression".
+The `*Ast()` variants bypass the Lexer and Parser when an AST is already compiled (typically via `getAst()` or `importAst()`, see `ast-management.md`). Evaluation semantics are strictly identical to the string variants.
 
-## Comportements
+## Behaviors
 
 ### `evaluate(string $expression, array $context): mixed`
 
-Évalue l'expression dans le contexte donné et renvoie le résultat. Le type de retour dépend de l'expression : `int`, `float`, `string`, `bool`, `null`, ou `array` (uniquement quand l'expression est un littéral liste ou une fonction renvoyant un tableau).
+Evaluates the expression in the given context and returns the result. The return type depends on the expression: `int`, `float`, `string`, `bool`, `null`, or `array` (only when the expression is a list literal or a function returning an array).
 
-**Pipeline interne** : lexing → parsing (avec mise en cache de l'AST, voir `ast-management.md`) → évaluation.
+**Internal pipeline**: lexing → parsing (with AST caching, see `ast-management.md`) → evaluation.
 
-**Exemples** :
+**Examples**:
 ```php
 $eval = new ExpressionEvaluator();
 
@@ -49,124 +49,124 @@ $eval->evaluate('a ?? 0', ['a' => null]);             // 0
 $eval->evaluate('[1, 2, 3]', []);                     // [1, 2, 3]
 ```
 
-**Exceptions levées** :
-- `SyntaxErrorException` — expression mal formée (lex ou parse)
-- `UnknownVariableException` — variable référencée mais absente du contexte
-- `TypeErrorException` — opération sur des types incompatibles, NaN/INF, division par zéro, overflow d'entier, mauvaise arity de fonction
-- `EvaluatorException` — profondeur d'AST dépassée (200 niveaux), nœud d'AST inconnu (corruption)
-- `CircularContextException` — non levée par `evaluate()` directement (uniquement par `describeContext()`)
+**Exceptions thrown**:
+- `SyntaxErrorException` — malformed expression (lex or parse)
+- `UnknownVariableException` — variable referenced but absent from the context
+- `TypeErrorException` — operation on incompatible types, NaN/INF, division by zero, integer overflow, wrong function arity
+- `EvaluatorException` — AST depth exceeded (200 levels), unknown AST node (corruption)
+- `CircularContextException` — not thrown by `evaluate()` directly (only by `describeContext()`)
 
 ### `evaluateBoolean(string $expression, array $context): bool`
 
-Comme `evaluate()`, mais valide que le résultat est un booléen strict.
+Same as `evaluate()`, but validates that the result is a strict boolean.
 
-**Exemples** :
+**Examples**:
 ```php
 $eval->evaluateBoolean('a > 0', ['a' => 5]);    // true
-$eval->evaluateBoolean('1 + 1', []);            // TypeErrorException — résultat int, pas bool
-$eval->evaluateBoolean('a = 1', ['a' => 1]);    // true (l'opérateur '=' renvoie bien un bool)
+$eval->evaluateBoolean('1 + 1', []);            // TypeErrorException — result is int, not bool
+$eval->evaluateBoolean('a = 1', ['a' => 1]);    // true (the '=' operator does return a bool)
 ```
 
-**Exceptions supplémentaires** :
-- `TypeErrorException` si le résultat n'est pas strictement un `bool` (pas de coercition truthy/falsy)
+**Additional exceptions**:
+- `TypeErrorException` if the result is not strictly a `bool` (no truthy/falsy coercion)
 
 ### `evaluateNumeric(string $expression, array $context): float`
 
-Comme `evaluate()`, mais valide que le résultat est numérique (int ou float) et le caste en `float`.
+Same as `evaluate()`, but validates that the result is numeric (int or float) and casts it to `float`.
 
-**Retour toujours `float`** : même pour un calcul entier, le retour est un `float`. `evaluateNumeric('5 + 3', [])` retourne `8.0`, pas `8`. C'est intentionnel : le type de sortie est uniforme et prévisible. Dans un contexte métier (prix, taux, quantités), le `float` est la valeur d'échange standard. Si l'appelant a besoin d'un `int` exact, il doit normaliser après coup.
+**Always returns `float`**: even for an integer calculation, the return value is a `float`. `evaluateNumeric('5 + 3', [])` returns `8.0`, not `8`. This is intentional: a uniform, predictable output type. In a business context (prices, rates, quantities), `float` is the standard exchange value. If the caller needs an exact `int`, it must normalize afterwards.
 
-**Exemples** :
+**Examples**:
 ```php
-$eval->evaluateNumeric('1 + 2', []);         // 3.0 (float, même si calcul int)
+$eval->evaluateNumeric('1 + 2', []);         // 3.0 (float, even for an int calculation)
 $eval->evaluateNumeric('cart.total * 1.2', ['cart' => ['total' => 100]]);  // 120.0
 $eval->evaluateNumeric('upper(name)', ['name' => 'x']);  // TypeErrorException
 ```
 
-**Exceptions supplémentaires** :
-- `TypeErrorException` si le résultat n'est ni `int` ni `float`
+**Additional exceptions**:
+- `TypeErrorException` if the result is neither `int` nor `float`
 
-### Variantes `evaluateAst*` 
+### `evaluateAst*` variants
 
-Sémantique identique aux trois méthodes ci-dessus, mais prennent un objet `Node` (AST) en premier argument au lieu d'une chaîne. Évite la phase lex/parse. Utile pour :
-- Évaluer plusieurs fois la même expression avec des contextes différents (parse une seule fois)
-- Évaluer un AST chargé depuis un cache externe via `importAst()`
+Identical semantics to the three methods above, but take a `Node` object (AST) as the first argument instead of a string. Skips the lex/parse phase. Useful for:
+- Evaluating the same expression multiple times with different contexts (parse once)
+- Evaluating an AST loaded from an external cache via `importAst()`
 
 ```php
-$ast = $eval->getAst('a > threshold');  // parse une fois
+$ast = $eval->getAst('a > threshold');  // parse once
 foreach ($items as $item) {
     if ($eval->evaluateAstBoolean($ast, ['a' => $item, 'threshold' => 10])) { /* ... */ }
 }
 ```
 
-## Décisions de design
+## Design decisions
 
-### Mode strict par défaut
+### Strict mode by default
 
-L'évaluation principale ne tolère **aucune anomalie silencieuse**. Cette politique est appliquée de façon systématique :
+Main evaluation tolerates **no silent anomaly**. This policy is applied consistently:
 
-- Une variable absente lève (pas de fallback implicite à `null`)
-- Les opérateurs logiques (`AND`, `OR`, `NOT`, ternaire) exigent un `bool` strict — pas de coercition truthy/falsy à la PHP (où `"false" AND true` vaudrait `true`)
-- Les opérateurs arithmétiques exigent `int|float` — `-null` n'est pas `0`, c'est une `TypeErrorException`
-- Les comparaisons de types incompatibles lèvent (par exemple `'a' > 5`)
-- Une comparaison directe d'arrays (`= / !=`) est interdite (utiliser `IN`)
+- A missing variable throws (no implicit fallback to `null`)
+- Logical operators (`AND`, `OR`, `NOT`, ternary) require a strict `bool` — no PHP-style truthy/falsy coercion (where `"false" AND true` would be `true`)
+- Arithmetic operators require `int|float` — `-null` is not `0`, it is a `TypeErrorException`
+- Comparisons of incompatible types throw (e.g. `'a' > 5`)
+- Direct array comparison (`= / !=`) is forbidden (use `IN`)
 
-L'objectif est le principe "no surprise" : un développeur PHP est habitué aux coercitions silencieuses, ce qui rend les expressions difficiles à auditer. La lib refuse cette tolérance.
+The goal is the "no surprise" principle: PHP developers are accustomed to silent coercions, which makes expressions hard to audit. The library rejects this tolerance.
 
-### Cache d'AST transparent
+### Transparent AST cache
 
-`evaluate()` (et toutes les variantes "expression") passent par `getAst()`, qui maintient un cache LRU interne (taille max 500 entrées) indexé par l'expression canonicalisée. Évaluer deux fois la même expression ne re-parse pas.
+`evaluate()` (and all string variants) go through `getAst()`, which maintains an internal LRU cache (max size 500 entries by default) indexed by the canonicalized expression. Evaluating the same expression twice does not re-parse.
 
-La canonicalisation se limite à un collapse des runs de whitespace **hors littéraux quotés**. Conséquence : `"1+1"` et `"1 + 1"` produisent deux entrées de cache distinctes (mais le même AST). Voir `ast-management.md` pour les détails et la justification.
+Canonicalization is limited to collapsing whitespace runs **outside quoted literals**. As a result, `"1+1"` and `"1 + 1"` produce two distinct cache entries (but the same AST). See `ast-management.md` for details and rationale.
 
-### Garde-fou de profondeur
+### Depth guard
 
-Une profondeur d'évaluation maximale de 200 niveaux est imposée (`MAX_EVAL_DEPTH` dans `Evaluator`). Au-delà, `EvaluatorException` est levée. Cette limite protège contre :
-- Les expressions pathologiques (imbrication excessive)
-- Les AST cycliques qui auraient pu passer la validation d'`importAst()`
+A maximum evaluation depth of 200 levels is enforced (`MAX_EVAL_DEPTH` in `Evaluator`). Beyond this, `EvaluatorException` is thrown. This limit protects against:
+- Pathological expressions (excessive nesting)
+- Cyclic ASTs that may have passed `importAst()` validation
 
-Le compteur est partagé entre les modes strict et safe et il est remis à zéro en cas d'exception, donc une évaluation échouée ne "pollue" pas la suivante.
+The counter is shared between strict and safe modes and is reset on exception, so a failed evaluation does not "pollute" the next one.
 
-### Validation des valeurs entrantes du contexte
+### Incoming context value validation
 
-Quand une variable est résolue depuis le contexte (`resolveVariable`), sa valeur est validée : seuls les scalaires, `null`, et tableaux de scalaires/null sont acceptés. Les objets, closures, ressources lèvent une `TypeErrorException` dès la résolution avec un message identifiant le chemin fautif (par exemple `Variable "cart.items[0]"`).
+When a variable is resolved from the context (`resolveVariable`), its value is validated: only scalars, `null`, and arrays of scalars/null are accepted. Objects, closures, and resources throw a `TypeErrorException` at resolution time with a message identifying the offending path (e.g. `Variable "cart.items[0]"`).
 
-Cette validation descend récursivement dans les tableaux indexés (les tableaux associatifs sont déjà décomposés en chemins dot-notation par le `ContextResolver`).
+This validation recurses into indexed arrays (associative arrays are already decomposed into dot-notation paths by `ContextResolver`).
 
-### NaN et INF interdits dans le pipeline
+### NaN and INF forbidden in the pipeline
 
-NaN et INF ne sont pas autorisés à participer aux calculs ou comparaisons. Cette règle est appliquée **à chaque opérateur** (arithmétique, comparaison, égalité, `-` unaire) :
-- Une valeur NaN/INF venant du contexte (`resolveVariable`) ou d'un retour de fonction custom n'est **pas** rejetée à ce stade : elle peut transiter jusqu'à `is_finite()`.
-- Dès qu'elle entre dans un opérateur, `TypeErrorException` est levée.
+NaN and INF are not allowed to participate in calculations or comparisons. This rule is enforced **at every operator** (arithmetic, comparison, equality, unary `-`):
+- A NaN/INF value coming from the context (`resolveVariable`) or from a custom function return is **not** rejected at that point: it can transit until `is_finite()`.
+- As soon as it enters an operator, `TypeErrorException` is thrown.
 
-**Échappatoire** : la fonction `is_finite()` permet de tester explicitement (renvoie `bool` sans lever). C'est le seul moyen d'inspecter un NaN/INF venant du contexte ou d'une fonction custom.
+**Escape hatch**: the `is_finite()` function allows explicit testing (returns `bool` without throwing). This is the only way to inspect a NaN/INF coming from the context or a custom function.
 
-### Gestion des exceptions des fonctions custom
+### Custom function exception handling
 
-Quand une fonction enregistrée via `registerFunction()` lève une exception pendant son exécution :
-- Les exceptions de la lib (`EvaluatorException` et descendantes : `TypeErrorException`, `UnknownVariableException`, etc.) transitent **inchangées**. Cela permet à une fonction custom de déléguer à `evaluate()` ou `getContextValue()` en interne.
-- **Toute autre exception** (`RuntimeException`, `LogicException`, `Error`, etc.) est encapsulée dans une `TypeErrorException` avec l'exception d'origine en `previous`.
+When a function registered via `registerFunction()` throws an exception during execution:
+- Library exceptions (`EvaluatorException` and descendants: `TypeErrorException`, `UnknownVariableException`, etc.) propagate **unchanged**. This allows a custom function to delegate to `evaluate()` or `getContextValue()` internally.
+- **Any other exception** (`RuntimeException`, `LogicException`, `Error`, etc.) is wrapped in a `TypeErrorException` with the original exception as `previous`.
 
-Garantie : `evaluate()` ne propage **jamais** d'exception PHP brute depuis du code utilisateur. Voir `functions.md` pour les détails sur l'enregistrement et l'arity.
+Guarantee: `evaluate()` **never** propagates a raw PHP exception from user code. See `functions.md` for details on registration and arity.
 
-## Limitations connues
+## Known limitations
 
-### Variables nommées comme des mots-clés
+### Variables named like keywords
 
-Les identifiants `and`, `or`, `not`, `in` (insensibles à la casse) sont tokenisés comme opérateurs logiques avant d'être interprétés comme identifiants. Conséquence : une variable racine nommée `In`, `AND`, etc. est inaccessible directement.
+The identifiers `and`, `or`, `not`, `in` (case-insensitive) are tokenized as logical operators before being interpreted as identifiers. As a result, a root variable named `In`, `AND`, etc. is inaccessible directly.
 
 ```php
 $eval->evaluate('In', ['In' => 5]);  // SyntaxErrorException
 ```
 
-Les chemins composés ne sont pas concernés tant que le segment de tête n'est pas un mot-clé : `user.in` fonctionne. Pour exposer une donnée dont la clé racine collisionne avec un mot-clé, l'encapsuler sous un parent : `['root' => ['in' => $value]]` accessible via `root.in`.
+Compound paths are not affected as long as the leading segment is not a keyword: `user.in` works. To expose data whose root key collides with a keyword, wrap it under a parent: `['root' => ['in' => $value]]` accessible via `root.in`.
 
-Mots-clés réservés (insensibles à la casse) : `and`, `or`, `not`, `in`, `true`, `false`, `null`.
+Reserved keywords (case-insensitive): `and`, `or`, `not`, `in`, `true`, `false`, `null`.
 
-### Clés contenant un point littéral
+### Keys containing a literal dot
 
-Le `.` est toujours interprété comme séparateur de chemin. Une clé de contexte qui contient un `.` littéral est inaccessible via la notation pointée. Voir `context.md`.
+The `.` is always interpreted as a path separator. A context key that contains a literal `.` is inaccessible via dot-notation. See `context.md`.
 
-### UnknownVariableException levée depuis une fonction custom
+### `UnknownVariableException` thrown from a custom function
 
-Si une fonction custom appelle `getContextValue('x', [])` en interne et lève `UnknownVariableException`, cette exception traverse `evaluate()` inchangée — mais le mode safe (`evaluateSafe()`) **ne pourra pas collecter** cette variable dans `missingVars` (la lib ne peut pas savoir si la variable manquante était attendue ou non). Les auteurs de fonctions custom doivent soit passer un défaut à `getContextValue()`, soit attraper l'exception eux-mêmes.
+If a custom function calls `getContextValue('x', [])` internally and throws `UnknownVariableException`, this exception passes through `evaluate()` unchanged — but safe mode (`evaluateSafe()`) **will not be able to collect** this variable in `missingVars` (the library cannot know whether the missing variable was expected or not). Custom function authors should either pass a default to `getContextValue()`, or catch the exception themselves.

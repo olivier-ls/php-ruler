@@ -1,13 +1,13 @@
-# Compilation et sérialisation d'AST
+# AST Compilation and Serialization
 
-## Vue d'ensemble
+## Overview
 
-Cette catégorie regroupe la gestion du cycle de vie des AST (Abstract Syntax Trees) : compilation depuis une chaîne, cache interne, export pour stockage externe, import sécurisé. Ce sont les mécanismes qui permettent d'optimiser des évaluations répétées et de persister des expressions compilées.
+This section covers the lifecycle management of ASTs (Abstract Syntax Trees): compilation from a string, internal cache, export for external storage, and secure import. These are the mechanisms that enable optimization of repeated evaluations and persistence of compiled expressions.
 
-Trois axes :
-1. **Compilation à la demande** — `getAst()` parse une expression et met le résultat en cache pour réutilisation
-2. **Cache interne** — LRU automatique, transparent, plafonné à 500 entrées
-3. **Export / import** — `exportAst()` et `importAst()` permettent de stocker un AST compilé en base ou fichier, et de le recharger sans repasser par le Lexer/Parser
+Three aspects:
+1. **On-demand compilation** — `getAst()` parses an expression and caches the result for reuse
+2. **Internal cache** — automatic LRU, transparent, capped at 500 entries by default
+3. **Export / import** — `exportAst()` and `importAst()` allow storing a compiled AST in a database or file and reloading it without going through the Lexer/Parser again
 
 ## API
 
@@ -20,230 +20,230 @@ public function clearCache(): self
 public function cacheSize(): int
 ```
 
-L'objet `Node` retourné est une interface implémentée par les classes :
+The `Node` object returned is an interface implemented by the following classes:
 `LiteralNode`, `VariableNode`, `UnaryNode`, `BinaryNode`, `InNode`, `FunctionNode`, `TernaryNode`.
 
-## Comportements
+## Behaviors
 
 ### `getAst(string $expression): Node`
 
-Compile l'expression et retourne l'AST. Met en cache le résultat pour réutilisation.
+Compiles the expression and returns the AST. Caches the result for reuse.
 
-**Pipeline interne** :
-1. Canonicalisation de l'expression pour la clé de cache (collapse de whitespaces hors littéraux)
-2. Si la clé existe dans le cache, retour direct (et déplacement LRU)
-3. Sinon : `Lexer::tokenize()` puis `Parser::parse()` ; mise en cache du résultat
+**Internal pipeline**:
+1. Canonicalize the expression for the cache key (collapse whitespace outside literals)
+2. If the key exists in the cache, return directly (and move LRU position)
+3. Otherwise: `Lexer::tokenize()` then `Parser::parse()`; cache the result
 
-**Exemples** :
+**Examples**:
 ```php
 $ast1 = $eval->getAst('a > 0');
 $ast2 = $eval->getAst('a > 0');
-// $ast1 === $ast2 (même instance, servie depuis le cache)
+// $ast1 === $ast2 (same instance, served from cache)
 
-$ast3 = $eval->getAst('a>0');   // pas d'espaces
-// $ast3 !== $ast1 — clés de cache distinctes (voir canonicalisation)
+$ast3 = $eval->getAst('a>0');   // no spaces
+// $ast3 !== $ast1 — distinct cache keys (see canonicalization)
 ```
 
-**Exceptions levées** :
-- `SyntaxErrorException` — erreur de lex ou de parse. Le cache n'est **pas modifié** dans ce cas (pas d'éviction préventive).
+**Exceptions thrown**:
+- `SyntaxErrorException` — lex or parse error. The cache is **not modified** in this case (no preemptive eviction).
 
-### Cache LRU
+### LRU Cache
 
-Caractéristiques :
-- Taille maximale : configurable via le constructeur (défaut : **500 entrées**, voir ci-dessous)
-- Politique d'éviction : LRU simple (la plus ancienne utilisation est supprimée quand le cache est plein)
-- Implémentation : tableau PHP avec re-positionnement à chaque hit (unset + ré-assignation)
-- Atomicité : si parsing échoue, aucune éviction n'a lieu (le cache reste cohérent)
-- **`0` désactive le cache** : les expressions sont re-parsées à chaque appel (utile pour les tests ou les contextes mémoire contraints)
+Characteristics:
+- Maximum size: configurable via the constructor (default: **500 entries**, see below)
+- Eviction policy: simple LRU (least recently used entry is removed when the cache is full)
+- Implementation: PHP array with repositioning on each hit (unset + reassignment)
+- Atomicity: if parsing fails, no eviction occurs (the cache remains consistent)
+- **`0` disables the cache**: expressions are re-parsed on every call (useful for tests or memory-constrained environments)
 
-### Cache configurable via le constructeur
+### Configurable cache via the constructor
 
-La taille du cache est paramétrée à la construction :
+The cache size is set at construction time:
 
 ```php
-// Défaut : 500 entrées
+// Default: 500 entries
 $eval = new ExpressionEvaluator();
 
-// Cache large pour un batch avec beaucoup d'expressions distinctes
+// Larger cache for a batch with many distinct expressions
 $eval = new ExpressionEvaluator(cacheMaxSize: 2000);
 
-// Cache désactivé
+// Cache disabled
 $eval = new ExpressionEvaluator(cacheMaxSize: 0);
 ```
 
-`$cacheMaxSize` doit être `>= 0` ; une valeur négative lève `\InvalidArgumentException`.
+`$cacheMaxSize` must be `>= 0`; a negative value throws `\InvalidArgumentException`.
 
-**Justification du défaut 500** : un seuil bas comme 50 obligerait à de fréquentes évictions sur les usages backoffice ; un seuil trop haut (10000+) consomme de la mémoire sans gain réel. 500 couvre largement les cas observés.
+**Rationale for the default of 500**: a low threshold like 50 would cause frequent evictions in back-office usage; a very high threshold (10,000+) consumes memory without real gain. 500 comfortably covers observed use cases.
 
-### Canonicalisation de la clé de cache
+### Cache key canonicalization
 
-La clé de cache **n'est pas** l'expression brute, c'est une version normalisée :
-- Les runs de whitespaces (espaces, tabs, NBSP) sont collapsés à un seul espace
-- Les whitespaces de tête et de queue sont supprimés
-- Les whitespaces **à l'intérieur de littéraux quotés** sont préservés
+The cache key is **not** the raw expression — it is a normalized version:
+- Runs of whitespace (spaces, tabs, NBSP) are collapsed to a single space
+- Leading and trailing whitespace is removed
+- Whitespace **inside quoted literals** is preserved
 
 ```php
-// Toutes ces formes partagent la MÊME entrée de cache :
+// All of these share the SAME cache entry:
 "a > 1"
 "  a > 1  "
 "a  >  1"
 "a\t>\t1"
 "a\xC2\xA0>\xC2\xA01"  // NBSP
 
-// Mais ces deux-là sont DIFFÉRENTES :
+// But these two are DIFFERENT:
 "a = 'x  y'"
 "a = 'x y'"
-// → littéraux distincts (deux espaces vs un)
+// → distinct literals (two spaces vs one)
 
-// Et ces deux-là aussi, malgré l'équivalence sémantique :
-"1+1"   → clé "1+1"
-"1 + 1" → clé "1 + 1"
+// And these two as well, despite semantic equivalence:
+"1+1"   → key "1+1"
+"1 + 1" → key "1 + 1"
 ```
 
-**Justification de la limitation** : la canonicalisation ne normalise pas les espaces autour des opérateurs. Le faire imposerait une tokenisation partielle au niveau du cache, dupliquant la grammaire du Lexer. Le compromis : fragmentation sous-optimale du cache, mais simplicité et robustesse.
+**Rationale for the limitation**: canonicalization does not normalize spaces around operators. Doing so would require partial tokenization at the cache level, duplicating the Lexer's grammar. The trade-off: suboptimal cache fragmentation, but simplicity and robustness.
 
-**Recommandation** : si vous générez des expressions programmatiquement et voulez maximiser le hit rate, utilisez un style d'espacement cohérent.
+**Recommendation**: if you generate expressions programmatically and want to maximize the hit rate, use a consistent spacing style.
 
-### Robustesse UTF-8
+### UTF-8 robustness
 
-La canonicalisation utilise le mode `/u` de PCRE. Sur UTF-8 invalide :
-- Fallback sur l'expression brute comme clé (plutôt que de risquer une clé vide qui collisionnerait avec toutes les autres entrées invalides)
-- Le parsing downstream rejettera l'input invalide avec une erreur claire
+Canonicalization uses PCRE's `/u` mode. On invalid UTF-8:
+- Falls back to the raw expression as the key (rather than risking an empty key that would collide with all other invalid entries)
+- Downstream parsing will reject the invalid input with a clear error
 
 ### `exportAst(string $expression): string`
 
-Compile l'expression et retourne sa forme sérialisée pour stockage externe. Le format est une **enveloppe JSON versionnée** :
+Compiles the expression and returns its serialized form for external storage. The format is a **versioned JSON envelope**:
 
 ```json
 {"v": 1, "ast": "<PHP-serialized-AST>"}
 ```
 
-Le champ `v` identifie la version du format. Tout changement incompatible de la structure des Node bumpe cette version, et `importAst()` rejettera les payloads d'anciennes versions avec un message clair.
+The `v` field identifies the format version. Any incompatible change to the Node structure bumps this version, and `importAst()` will reject payloads from older versions with a clear message.
 
 ```php
 $serialized = $eval->exportAst('cart.total > threshold');
-// Stocker $serialized en base...
+// Store $serialized in a database...
 
 $ast = $eval->importAst($serialized);
 $result = $eval->evaluateAst($ast, $context);
 ```
 
-**Exceptions levées** :
-- `SyntaxErrorException` — comme `getAst()`
+**Exceptions thrown**:
+- `SyntaxErrorException` — same as `getAst()`
 
 ### `importAst(string $serialized): Node`
 
-Désérialise et **valide** un AST exporté. Renvoie un `Node` utilisable avec les méthodes `evaluateAst*` / `explainAst`.
+Deserializes and **validates** an exported AST. Returns a `Node` usable with the `evaluateAst*` / `explainAst` methods.
 
-Validation effectuée :
-1. **Décodage de l'enveloppe JSON** : vérifie que le payload est bien du JSON avec les champs `v` et `ast`.
-2. **Vérification de version** : si `v` ne correspond pas à `AST_EXPORT_VERSION` (actuellement `1`), rejet immédiat avec un message demandant de re-compiler.
-3. **Restriction des classes** : `unserialize()` est appelé avec `allowed_classes` limité à la hiérarchie de Node de la lib. Aucune classe externe ne peut être instanciée.
-4. **Détection de cycles** : l'AST est walké via `SplObjectStorage` pour détecter toute référence cyclique. Les ASTs cycliques sont rejetés.
-5. **Limite de profondeur** : 200 niveaux maximum (`IMPORT_AST_MAX_DEPTH`), miroir de la limite d'évaluation. Au-delà, rejet.
+Validation performed:
+1. **JSON envelope decoding**: verifies that the payload is valid JSON with the `v` and `ast` fields.
+2. **Version check**: if `v` does not match `AST_EXPORT_VERSION` (currently `1`), immediately rejected with a message asking to re-compile.
+3. **Class restriction**: `unserialize()` is called with `allowed_classes` limited to the library's Node hierarchy. No external class can be instantiated.
+4. **Cycle detection**: the AST is walked via `SplObjectStorage` to detect any circular reference. Cyclic ASTs are rejected.
+5. **Depth limit**: 200 levels maximum (`IMPORT_AST_MAX_DEPTH`), mirroring the evaluation limit. Beyond that, rejected.
 
-**Exceptions levées** :
-- `\InvalidArgumentException` — payload invalide (JSON malformé, champs manquants, version incompatible, classe non autorisée, cycle détecté, profondeur dépassée)
+**Exceptions thrown**:
+- `\InvalidArgumentException` — invalid payload (malformed JSON, missing fields, version mismatch, unauthorized class, cycle detected, depth exceeded)
 
 ```php
-// Import d'un payload d'une ancienne version de la lib :
+// Importing a payload from an older version of the library:
 $ast = $eval->importAst($oldPayload);
 // → InvalidArgumentException: 'importAst(): AST export version mismatch — got v0, expected v1.
 //    Re-compile the expression with exportAst() to refresh the stored payload.'
 ```
 
-### Politique de versioning
+### Versioning policy
 
-La constante interne `AST_EXPORT_VERSION` (actuellement `1`) est bumpée à chaque changement incompatible de la structure des Node (nouvelles propriétés, classes renommées, nœuds supprimés). Cela force le caller à re-compiler les expressions stockées plutôt que de laisser tourner un AST silencieusement mal-interprété.
+The internal constant `AST_EXPORT_VERSION` (currently `1`) is bumped on every incompatible change to the Node structure (new properties, renamed classes, removed nodes). This forces callers to re-compile stored expressions rather than silently running a misinterpreted AST.
 
-### Sécurité d'`importAst()`
+### Security of `importAst()`
 
-⚠️ **Ne JAMAIS appeler `importAst()` avec une donnée d'origine non sûre.**
+⚠️ **Never call `importAst()` with data from an untrusted source.**
 
-Même avec `allowed_classes` restreint, `unserialize()` peut avoir d'autres surprises selon les versions de PHP. La validation effectuée par la lib est une **défense en profondeur**, pas un blanc-seing pour désérialiser des entrées utilisateur arbitraires.
+Even with `allowed_classes` restricted, `unserialize()` may have other surprises depending on the PHP version. The validation performed by the library is a **defense in depth**, not a blanket permission to deserialize arbitrary user input.
 
-Cas d'usage légitime : un AST exporté **par votre propre application**, stocké dans **votre propre base de données ou cache**, sous votre contrôle. Le caller assume la confiance dans la provenance.
+Legitimate use case: an AST exported **by your own application**, stored in **your own database or cache**, under your control. The caller assumes trust in the provenance.
 
-### Partage de nœuds (DAG-like)
+### Node sharing (DAG-like)
 
-La détection de cycles utilise un suivi du **chemin actif** (`attach()` à la descente, `detach()` à la remontée). Conséquence : un même nœud référencé par deux frères (par exemple le même `LiteralNode` partagé entre deux arguments de fonction) **n'est pas** considéré comme cyclique.
+Cycle detection uses **active path tracking** (`attach()` on descent, `detach()` on ascent). As a result, the same node referenced by two siblings (e.g. the same `LiteralNode` shared between two function arguments) is **not** considered cyclic.
 
 ```
                 FunctionNode
                /            \
-        LiteralNode(5)   LiteralNode(5)   ← même instance, OK
+        LiteralNode(5)   LiteralNode(5)   ← same instance, OK
 ```
 
-Cette tolérance est délibérée : elle laisse la porte ouverte à une éventuelle optimisation future qui internalises les littéraux identiques.
+This tolerance is deliberate: it leaves the door open for a potential future optimization that interns identical literals.
 
-### `clearCache(): self` et `cacheSize(): int`
+### `clearCache(): self` and `cacheSize(): int`
 
-- `clearCache()` : vide intégralement le cache. Renvoie `$this` pour chaînage.
-- `cacheSize()` : nombre d'entrées actuellement en cache.
+- `clearCache()`: completely clears the cache. Returns `$this` for chaining.
+- `cacheSize()`: number of entries currently in cache.
 
-Typiquement utile pour des tests, ou pour libérer de la mémoire après un batch volumineux.
+Typically useful for tests, or to free memory after a large batch.
 
 ```php
 $eval->clearCache();
 assert($eval->cacheSize() === 0);
 ```
 
-## Décisions de design
+## Design decisions
 
-### Cache transparent et automatique
+### Transparent and automatic cache
 
-Le cache fonctionne sans intervention de l'appelant. Évaluer la même expression 1000 fois n'entraîne qu'un seul parse, sans configuration. L'appelant peut ignorer son existence.
+The cache works without any caller intervention. Evaluating the same expression 1,000 times only triggers one parse, with no configuration needed. Callers can ignore its existence entirely.
 
-### Cache configurable
+### Configurable cache
 
-La taille du cache (défaut 500) est paramétrée via le constructeur. `0` désactive le cache. Voir la section "Cache LRU" pour les détails.
+The cache size (default 500) is set via the constructor. `0` disables the cache. See the "LRU Cache" section for details.
 
-### Cache indépendant par instance
+### Per-instance independent cache
 
-Le cache est une propriété d'instance, pas statique. Deux instances de `ExpressionEvaluator` ne partagent pas leur cache. C'est logique : les fonctions custom enregistrées via `registerFunction()` sont aussi par instance, donc deux instances peuvent avoir des résolutions différentes pour la même expression.
+The cache is an instance property, not static. Two instances of `ExpressionEvaluator` do not share their cache. This makes sense: custom functions registered via `registerFunction()` are also per-instance, so two instances may resolve the same expression differently.
 
-### Export : enveloppe JSON versionnée
+### Export: versioned JSON envelope
 
-L'export produit un JSON `{"v": 1, "ast": "<serialize()>"}`. Ce wrapping ajoute :
-- **Versioning** : détection immédiate des payloads obsolètes au lieu d'un `unserialize()` silencieusement incorrect.
-- **Interopérabilité minimale** : le JSON est lisible par des outils non-PHP pour inspecter la version, même si l'AST sérialisé reste opaque.
+The export produces a JSON `{"v": 1, "ast": "<serialize()>"}`. This wrapping adds:
+- **Versioning**: immediate detection of stale payloads instead of a silently incorrect `unserialize()`.
+- **Minimal interoperability**: the JSON is readable by non-PHP tools to inspect the version, even if the serialized AST itself is opaque.
 
-Inconvénients :
-- Format légèrement plus volumineux (overhead de l'enveloppe JSON, marginal).
-- Couplage à la structure interne des classes Node (un refactoring de signature peut invalider des AST exportés en base) — mais la version permet de détecter et gérer ce cas proprement.
+Drawbacks:
+- Slightly larger format (JSON envelope overhead, marginal).
+- Coupled to the internal Node class structure (a signature refactoring may invalidate ASTs stored in a database) — but the version field allows detecting and handling this cleanly.
 
-### Validation séparée du désérialisation
+### Validation separate from deserialization
 
-La validation (cycles + profondeur) n'est **pas** déléguée à PHP — elle est faite explicitement après `unserialize()`. Raison : PHP supporte les références cycliques en sérialisation, donc `unserialize()` les recrée silencieusement. Sans validation, un AST cyclique resterait correct du point de vue PHP mais ferait stack-overflow l'évaluateur.
+Validation (cycles + depth) is **not** delegated to PHP — it is done explicitly after `unserialize()`. Reason: PHP supports circular references in serialization, so `unserialize()` silently recreates them. Without validation, a cyclic AST would be valid from PHP's perspective but would cause a stack overflow in the evaluator.
 
-L'évaluateur a aussi son propre garde-fou (`MAX_EVAL_DEPTH`), mais la validation à l'import donne une erreur plus précoce et plus claire.
+The evaluator also has its own guard (`MAX_EVAL_DEPTH`), but import-time validation provides an earlier and clearer error.
 
-## Limitations connues
+## Known limitations
 
-### Pas de cache distribué
+### No distributed cache
 
-Le cache est local à l'instance. Sur une architecture multi-process / multi-serveur, chaque process maintient son propre cache. Pour partager, utilisez `exportAst()` + un cache externe (Redis...) + `importAst()`.
+The cache is local to the instance. In a multi-process / multi-server architecture, each process maintains its own cache. To share it, use `exportAst()` + an external cache (Redis...) + `importAst()`.
 
-### Taille de cache configurable, mais par instance uniquement
+### Cache size configurable but per-instance only
 
-La taille du cache se règle via le constructeur (`cacheMaxSize`, défaut 500, `0` pour désactiver). Voir la section "Cache configurable via le constructeur". Elle reste néanmoins **par instance** : pas de réglage global, et chaque instance a son propre cache (voir "Cache indépendant par instance").
+The cache size is set via the constructor (`cacheMaxSize`, default 500, `0` to disable). See the "Configurable cache via the constructor" section. It remains **per-instance**: no global setting, and each instance has its own cache (see "Per-instance independent cache").
 
-### Pas de TTL
+### No TTL
 
-Une entrée reste en cache tant qu'elle n'est pas évincée par LRU. Pas d'invalidation temporelle. En pratique, peu pertinent : un AST compilé est immuable (pas de dépendance externe).
+An entry stays in cache until evicted by LRU. No time-based invalidation. In practice, this is rarely relevant: a compiled AST is immutable (no external dependencies).
 
-### Couplage de format pour l'export
+### Format coupling on export
 
-Le format `serialize()` est lié à la structure interne. Voir Décisions de design.
+The `serialize()` format is tied to the internal structure. See Design decisions.
 
-## Limites et constantes
+## Limits and constants
 
-| Constante | Valeur | Localisation | Description |
+| Constant | Value | Location | Description |
 |---|---|---|---|
-| `MAX_DEPTH` | 64 | `ContextResolver` | Profondeur max de contexte avant `CircularContextException` |
-| `MAX_EVAL_DEPTH` | 200 | `Evaluator` | Profondeur max d'évaluation d'AST (modes strict et safe) |
-| `IMPORT_AST_MAX_DEPTH` | 200 | `ExpressionEvaluator` | Profondeur max acceptée par `importAst()` |
-| `AST_EXPORT_VERSION` | 1 | `ExpressionEvaluator` | Version du format d'export, vérifiée à l'import |
-| `CACHE_MAX_SIZE` (défaut) | 500 | `ExpressionEvaluator` | Taille max du cache LRU (configurable via constructeur) |
+| `MAX_DEPTH` | 64 | `ContextResolver` | Max context depth before `CircularContextException` |
+| `MAX_EVAL_DEPTH` | 200 | `Evaluator` | Max AST evaluation depth (strict and safe modes) |
+| `IMPORT_AST_MAX_DEPTH` | 200 | `ExpressionEvaluator` | Max depth accepted by `importAst()` |
+| `AST_EXPORT_VERSION` | 1 | `ExpressionEvaluator` | Export format version, checked on import |
+| `CACHE_MAX_SIZE` (default) | 500 | `ExpressionEvaluator` | Max LRU cache size (configurable via constructor) |
 
-Ces valeurs ne sont pas configurables à l'exception de la taille du cache (voir constructeur). Elles ont été choisies pour couvrir largement les cas réels tout en protégeant contre les abus — aucune n'a posé de problème en pratique.
+These values are not configurable except for the cache size (see constructor). They were chosen to comfortably cover real-world use cases while protecting against abuse — none has caused issues in practice.

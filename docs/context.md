@@ -1,15 +1,15 @@
-# Accès au contexte
+# Context Access
 
-## Vue d'ensemble
+## Overview
 
-Le contexte est un tableau PHP associatif fourni à chaque évaluation. Il contient les variables que l'expression peut référencer. Les chemins sont exprimés en **notation pointée** (dot-notation) : `cart.total` accède à `$context['cart']['total']`.
+The context is a PHP associative array provided to each evaluation. It holds the variables that the expression can reference. Paths are expressed in **dot-notation**: `cart.total` accesses `$context['cart']['total']`.
 
-Cette catégorie regroupe les helpers pour interagir directement avec un contexte, en dehors d'une évaluation :
-- Résolution explicite de chemin avec ou sans valeur par défaut
-- Test d'existence
-- Description structurée du contexte (typiquement pour un backoffice qui affiche les variables disponibles)
+This section covers helpers for interacting directly with a context outside of an evaluation:
+- Explicit path resolution with or without a default value
+- Existence check
+- Structured description of the context (typically for a back-office that displays available variables)
 
-Les méthodes sont exposées sur `ExpressionEvaluator` pour la commodité mais délèguent toutes au `ContextResolver` (classe statique, sans état).
+The methods are exposed on `ExpressionEvaluator` for convenience but all delegate to `ContextResolver` (a static, stateless class).
 
 ## API
 
@@ -20,11 +20,11 @@ public function hasContextValue(string $path, array $context): bool
 public function describeContext(array $context): array
 ```
 
-## Comportements
+## Behaviors
 
 ### `getContextValue(string $path, array $context): mixed`
 
-Résout un chemin pointé dans le contexte. Lève si le chemin n'existe pas.
+Resolves a dot-notation path in the context. Throws if the path does not exist.
 
 ```php
 $ctx = ['cart' => ['total' => 150.0, 'items' => ['apple', 'bread']]];
@@ -36,42 +36,42 @@ $eval->getContextValue('cart.shipping', $ctx);    // UnknownVariableException
 $eval->getContextValue('customer.email', $ctx);   // UnknownVariableException
 ```
 
-**Exceptions levées** :
-- `UnknownVariableException` — chemin introuvable. Le message indique le chemin demandé et, si la résolution a partiellement réussi, le segment qui a échoué.
+**Exceptions thrown**:
+- `UnknownVariableException` — path not found. The message indicates the requested path and, if resolution partially succeeded, the failing segment.
 
-Exemple de message : `Unknown variable: "cart.shipping" (failed at "cart.shipping")`. Pour un chemin entièrement absent dès le premier segment : `Unknown variable: "customer.email"`.
+Example message: `Unknown variable: "cart.shipping" (failed at "cart.shipping")`. For a path entirely absent from the first segment: `Unknown variable: "customer.email"`.
 
 ### `getContextValueOrDefault(string $path, array $context, mixed $default = null): mixed`
 
-Comme `getContextValue()`, mais retourne `$default` au lieu de lever en cas de chemin absent.
+Same as `getContextValue()`, but returns `$default` instead of throwing when the path is absent.
 
 ```php
-$eval->getContextValueOrDefault('cart.shipping', $ctx);          // null (défaut implicite)
+$eval->getContextValueOrDefault('cart.shipping', $ctx);          // null (implicit default)
 $eval->getContextValueOrDefault('cart.shipping', $ctx, 0);       // 0
-$eval->getContextValueOrDefault('cart.total', $ctx, 0);          // 150.0 (présent, défaut ignoré)
+$eval->getContextValueOrDefault('cart.total', $ctx, 0);          // 150.0 (present, default ignored)
 ```
 
-⚠️ Le défaut est retourné aussi si la valeur trouvée est `null` ? **Non** : seul l'absence du chemin déclenche le défaut. Une valeur `null` présente est renvoyée telle quelle.
+⚠️ Is the default returned if the found value is `null`? **No**: only the absence of the path triggers the default. A `null` value that is present is returned as-is.
 
 ```php
 $ctx = ['a' => null];
-$eval->getContextValueOrDefault('a', $ctx, 'fallback');  // null (présent, même si null)
+$eval->getContextValueOrDefault('a', $ctx, 'fallback');  // null (present, even if null)
 $eval->getContextValueOrDefault('b', $ctx, 'fallback');  // 'fallback' (absent)
 ```
 
 ### `hasContextValue(string $path, array $context): bool`
 
-Test pur d'existence du chemin, sans déclencher d'exception ni allouer.
+Pure existence check for the path, without throwing an exception or allocating.
 
 ```php
 $eval->hasContextValue('cart.total', $ctx);     // true
 $eval->hasContextValue('cart.shipping', $ctx);  // false
-$eval->hasContextValue('cart', $ctx);           // true (un sous-tableau compte comme une "présence")
+$eval->hasContextValue('cart', $ctx);           // true (a sub-array counts as "present")
 ```
 
 ### `describeContext(array $context): array`
 
-Retourne une description structurée du contexte sous forme de tableau, prête à être JSON-sérialisée. Typiquement utilisé par un backoffice pour lister les variables disponibles à l'utilisateur (autocomplétion, documentation).
+Returns a structured description of the context as an array, ready to be JSON-serialized. Typically used by a back-office to list available variables for the user (autocompletion, documentation).
 
 ```php
 $ctx = [
@@ -89,102 +89,102 @@ $eval->describeContext($ctx);
 // ]
 ```
 
-**Politique de flattening** :
-- Les **tableaux associatifs** sont aplatis en chemins pointés
-- Les **listes indexées** (au sens `array_is_list()`) sont conservées comme valeurs terminales et typées `list`
+**Flattening policy**:
+- **Associative arrays** are flattened to dot-notation paths
+- **Indexed lists** (as determined by `array_is_list()`) are kept as terminal values and typed `list`
 
-Types possibles dans le champ `type` :
-- `'number'` (int et float confondus)
+Possible values for the `type` field:
+- `'number'` (int and float combined)
 - `'string'`
 - `'boolean'`
 - `'null'`
 - `'list'`
-- `'unknown'` (cas non couvert)
+- `'unknown'` (unhandled case)
 
-Pour les listes, un champ supplémentaire `itemType` indique :
-- Le type commun si tous les éléments le partagent
-- `'mixed'` si les éléments sont de types différents
-- `'unknown'` si la liste est vide
+For lists, an additional `itemType` field indicates:
+- The common type if all elements share it
+- `'mixed'` if elements have different types
+- `'unknown'` if the list is empty
 
-**Exceptions levées** :
-- `CircularContextException` — la structure dépasse `MAX_DEPTH` niveaux d'imbrication (64). En pratique, cela signale une référence circulaire (`$ctx['self'] = &$ctx`), puisque les contextes métier légitimes ne dépassent jamais quelques niveaux.
+**Exceptions thrown**:
+- `CircularContextException` — the structure exceeds `MAX_DEPTH` nesting levels (64). In practice, this signals a circular reference (`$ctx['self'] = &$ctx`), since legitimate business contexts never exceed a few levels.
 
-## Décisions de design
+## Design decisions
 
-### Notation pointée stricte
+### Strict dot-notation
 
-Le `.` est **toujours** un séparateur de chemin. Il n'y a pas de mécanisme d'échappement.
+The `.` is **always** a path separator. There is no escaping mechanism.
 
-Conséquence : une clé contenant un `.` littéral est **inaccessible** via ces méthodes. Si vos données contiennent des clés à points (par exemple des FQDN), encapsulez-les sous un parent :
+As a result, a key containing a literal `.` is **inaccessible** via these methods. If your data contains dot-keyed entries (e.g. FQDNs), wrap them under a parent:
 
 ```php
-// Inaccessible :
+// Inaccessible:
 $ctx = ['foo.bar' => 'value'];
 $eval->getContextValue('foo.bar', $ctx);  // UnknownVariableException
 
-// Encapsulé :
+// Wrapped:
 $ctx = ['data' => ['foo.bar' => 'value']];
 $value = $eval->getContextValue('data', $ctx);  // ['foo.bar' => 'value']
-// Puis $value['foo.bar'] en PHP standard
+// Then $value['foo.bar'] in standard PHP
 ```
 
-C'est cohérent avec l'usage : la lib est conçue pour des contextes métier (panier, client, commande), pas pour des structures techniques avec des clés arbitraires.
+This is consistent with the intended use: the library is designed for business contexts (cart, customer, order), not for technical structures with arbitrary keys.
 
-### Listes traitées comme valeurs terminales
+### Lists treated as terminal values
 
-`describeContext()` ne descend **pas** dans les listes indexées. Une liste est exposée telle quelle, avec son type d'éléments. Justification :
-- Une liste est sémantiquement une valeur agrégée, pas une structure à explorer
-- Aplatir une liste en `tags.0`, `tags.1`, `tags.2`… n'a pas de sens pour la plupart des usages métier (et empêche le `IN` de fonctionner sur ces chemins)
+`describeContext()` does **not** descend into indexed lists. A list is exposed as-is, with its element type. Rationale:
+- A list is semantically an aggregate value, not a structure to explore
+- Flattening a list into `tags.0`, `tags.1`, `tags.2`... makes no sense for most business use cases (and would prevent `IN` from working on those paths)
 
-`getContextValue('tags', $ctx)` retourne le tableau complet, qu'on peut ensuite utiliser avec `IN` :
+`getContextValue('tags', $ctx)` returns the full array, which can then be used with `IN`:
 
 ```php
 $eval->evaluate('"php" IN tags', $ctx);  // true
 ```
 
-### `MAX_DEPTH = 64` pour la détection de cycles
+### `MAX_DEPTH = 64` for cycle detection
 
-`describeContext()` détecte les références cycliques via une limite de profondeur (64 niveaux). C'est généreux : les contextes métier réels dépassent rarement 5-10 niveaux. Au-delà de 64, on présume une boucle.
+`describeContext()` detects circular references via a depth limit (64 levels). This is generous: real business contexts rarely exceed 5–10 levels. Beyond 64, a loop is assumed.
 
-Cette limite **ne s'applique pas** aux autres méthodes (`getContextValue`, `has`, `getOrDefault`) : elles font une descente itérative bornée par le chemin demandé, donc pas exposées au risque de cycle dans le contexte.
+This limit **does not apply** to the other methods (`getContextValue`, `has`, `getOrDefault`): they perform an iterative descent bounded by the requested path, so they are not exposed to cycle risk.
 
-### `ContextResolver` static, sans état
+### `ContextResolver` static and stateless
 
-La classe `ContextResolver` n'a pas d'état d'instance — toutes ses méthodes sont statiques. Choix simple :
-- Pas d'instance à passer en dépendance
-- Pas de cache entre appels (chaque résolution part de zéro)
-- Idempotent et thread-safe par construction
+The `ContextResolver` class has no instance state — all its methods are static. A simple choice:
+- No instance to pass as a dependency
+- No cross-call cache (each resolution starts fresh)
+- Idempotent and thread-safe by design
 
-Les méthodes d'`ExpressionEvaluator` ne sont qu'une commodité d'API (`$eval->getContextValue(...)` est strictement équivalent à `ContextResolver::resolve(...)`).
+The `ExpressionEvaluator` methods are just an API convenience (`$eval->getContextValue(...)` is strictly equivalent to `ContextResolver::resolve(...)`).
 
-### `array_key_exists` et non `isset`
+### `array_key_exists` not `isset`
 
-La résolution utilise `array_key_exists()`, pas `isset()`. Conséquence : une clé présente avec la valeur `null` **est considérée présente**.
+Resolution uses `array_key_exists()`, not `isset()`. As a result, a key present with a `null` value **is considered present**.
 
 ```php
 $ctx = ['a' => null];
 $eval->hasContextValue('a', $ctx);            // true
 $eval->getContextValue('a', $ctx);            // null
-$eval->getContextValueOrDefault('a', $ctx);   // null (pas le défaut)
+$eval->getContextValueOrDefault('a', $ctx);   // null (not the default)
 ```
 
-C'est cohérent : `null` est une valeur légitime dans le langage d'expression (`a = null`, `a ?? defaultValue`...), pas un marqueur d'absence.
+This is consistent: `null` is a legitimate value in the expression language (`a = null`, `a ?? defaultValue`...), not an absence marker.
 
-## Limitations connues
+## Known limitations
 
-### Pas de wildcards ni d'expressions de chemin
+### No wildcards or path expressions
 
-`cart.items[*].price` ou `**.email` ne sont pas supportés. Les chemins sont des constantes textuelles. Pour des opérations sur des sous-collections, utilisez les fonctions agrégatives (`sum`, `min_of`...) ou structurez le contexte différemment.
+`cart.items[*].price` or `**.email` are not supported. Paths are text constants. For operations on sub-collections, use aggregation functions (`sum`, `min_of`...) or restructure the context.
 
-### Pas de validation du contexte en amont
+### No upfront context validation
 
-Aucune méthode du type "le contexte est-il valide ?". `evaluate()` détecte les valeurs non supportées (objets, closures...) à la **résolution** des variables, pas à l'entrée. Conséquence : si une variable d'un objet est dans le contexte mais jamais référencée par l'expression, son invalidité passe inaperçue.
+There is no "is this context valid?" method. `evaluate()` detects unsupported values (objects, closures...) at variable **resolution** time, not at entry. As a result, if a variable holding an object is in the context but never referenced by the expression, its invalidity goes unnoticed.
 
-Si vous voulez valider en amont, parcourez le contexte vous-même ou utilisez `describeContext()` (qui lèvera sur cycles mais pas sur types non supportés — voir Points à arbitrer).
+To validate upfront, walk the context yourself or use `describeContext()` (which will throw on cycles but not on unsupported types).
 
-### Insensibilité aux mots-clés en racine
+### Keyword-insensitive root keys
 
-Une clé racine du contexte qui collisionne avec un mot-clé du langage (`and`, `or`, `not`, `in`, `true`, `false`, `null`) reste accessible via `getContextValue('and', $ctx)` (qui passe par `ContextResolver`, pas par le Lexer). Mais elle est **inaccessible depuis une expression** :
+A root context key that collides with a language keyword (`and`, `or`, `not`, `in`, `true`, `false`, `null`) is still accessible via `getContextValue('and', $ctx)` (which goes through `ContextResolver`, not the Lexer). But it is **inaccessible from an expression**:
 
 ```php
 $ctx = ['in' => 5];
@@ -192,4 +192,4 @@ $eval->getContextValue('in', $ctx);    // 5 (OK)
 $eval->evaluate('in', $ctx);           // SyntaxErrorException
 ```
 
-Voir `language-reference.md` pour les mots-clés réservés.
+See `language-reference.md` for reserved keywords.

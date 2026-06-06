@@ -1,10 +1,10 @@
 # php-ruler
 
-Librairie PHP pure (sans extension) pour l'évaluation d'expressions. Pas de dépendances. PHP 8.2+.
+Pure PHP expression evaluation library (no extensions required). No dependencies. PHP 8.2+.
 
-## En une phrase
+## In a nutshell
 
-Vous donnez une expression sous forme de chaîne (`"cart.total > 100 AND customer.vip = true"`), un contexte (tableau PHP de variables), et vous obtenez le résultat évalué. Le tout de façon stricte, prévisible, et sans surprise de typage.
+Pass an expression as a string (`"cart.total > 100 AND customer.vip = true"`), a context (a PHP array of variables), and get back the evaluated result — in a strict, predictable, type-safe way.
 
 ## Installation
 
@@ -12,90 +12,90 @@ Vous donnez une expression sous forme de chaîne (`"cart.total > 100 AND custome
 composer require expreval/expreval
 ```
 
-## Démarrage rapide
+## Quick start
 
 ```php
 use Ols\PhpRuler\ExpressionEvaluator;
 
 $eval = new ExpressionEvaluator();
 
-// Évaluation basique
+// Basic evaluation
 $eval->evaluate('cart.total > 100', ['cart' => ['total' => 150]]);   // true
 $eval->evaluate('round(cart.total * 1.2, 2)', ['cart' => ['total' => 100]]);  // 120.0
 $eval->evaluate('upper(customer.name)', ['customer' => ['name' => 'alice']]);  // 'ALICE'
 
-// Forcer un type de retour
-$eval->evaluateBoolean('a > 0 AND b < 10', ['a' => 5, 'b' => 7]);   // true (bool garanti)
-$eval->evaluateNumeric('price * qty', ['price' => 9.99, 'qty' => 3]); // 29.97 (float garanti)
+// Enforce a return type
+$eval->evaluateBoolean('a > 0 AND b < 10', ['a' => 5, 'b' => 7]);   // true (guaranteed bool)
+$eval->evaluateNumeric('price * qty', ['price' => 9.99, 'qty' => 3]); // 29.97 (guaranteed float)
 ```
 
-## Langage
+## Language
 
-Le langage est volontairement proche de PHP : mêmes précédences, même sémantique des opérateurs. Un développeur PHP doit se sentir chez lui.
+The language is intentionally close to PHP: same precedences, same operator semantics. A PHP developer should feel right at home.
 
 ```
 cart.total > 100
 customer.vip = true AND cart.total > 50
 cart.country IN ['FR', 'BE', 'CH']
-customer.score ?? 0 > 50       ← attention à la précédence, voir "Pièges courants"
-(customer.score ?? 0) > 50     ← forme correcte
+customer.score ?? 0 > 50       ← watch out for precedence, see "Common pitfalls"
+(customer.score ?? 0) > 50     ← correct form
 today() > '2026-01-01'
 round(total * 0.9, 2)
 ```
 
-Référence complète : [language-reference.md](language-reference.md).
+Full reference: [language-reference.md](language-reference.md).
 
-## Strictement typé, pas de coercition
-
-```php
-// En PHP natif : "false" AND true → true (la string "false" est truthy)
-// Dans php-ruler : TypeErrorException — "false" n'est pas un bool
-
-// En PHP natif : null + 1 → 1
-// Dans php-ruler : TypeErrorException — null n'est pas un nombre
-
-// En PHP natif : '5' == 5 → true
-// Dans php-ruler : TypeErrorException — string et int incomparables avec =
-```
-
-La seule tolérance est `int` vs `float` sur l'égalité (`5 = 5.0` → `true`) — utile en pratique.
-
-## `evaluateNumeric()` retourne toujours `float`
-
-Même pour un calcul entier :
+## Strictly typed, no coercion
 
 ```php
-$eval->evaluateNumeric('5 + 3', []);  // 8.0, pas 8
+// In native PHP: "false" AND true → true (the string "false" is truthy)
+// In php-ruler:  TypeErrorException — "false" is not a bool
+
+// In native PHP: null + 1 → 1
+// In php-ruler:  TypeErrorException — null is not a number
+
+// In native PHP: '5' == 5 → true
+// In php-ruler:  TypeErrorException — string and int cannot be compared with =
 ```
 
-C'est intentionnel : type de sortie uniforme pour les calculs métier (prix, taux). Normaliser en `int` après coup si nécessaire.
+The only tolerance is `int` vs `float` on equality (`5 = 5.0` → `true`) — which is useful in practice.
 
-## Modes d'évaluation
+## `evaluateNumeric()` always returns `float`
 
-### Mode strict (défaut)
-
-Toute anomalie lève une exception.
+Even for an integer calculation:
 
 ```php
-$eval->evaluate('a > 0', []);  // UnknownVariableException — 'a' manque
+$eval->evaluateNumeric('5 + 3', []);  // 8.0, not 8
 ```
 
-### Mode safe
+This is intentional: a uniform output type for business calculations (prices, rates). Cast to `int` afterwards if needed.
 
-Collecte les variables manquantes au lieu de lever.
+## Evaluation modes
+
+### Strict mode (default)
+
+Any anomaly throws an exception.
+
+```php
+$eval->evaluate('a > 0', []);  // UnknownVariableException — 'a' is missing
+```
+
+### Safe mode
+
+Collects missing variables instead of throwing.
 
 ```php
 $result = $eval->evaluateSafe('a > 0 AND b < 10', ['a' => 5]);
-$result->success;      // false — 'b' manquait
+$result->success;      // false — 'b' was missing
 $result->missingVars;  // ['b']
 $result->getValueOr(false);  // false (fallback)
 ```
 
-Voir [evaluate-safe.md](evaluate-safe.md).
+See [evaluate-safe.md](evaluate-safe.md).
 
 ### Explainer
 
-Diagnostic nœud par nœud — pourquoi une règle a passé ou échoué.
+Node-by-node diagnostics — why a rule passed or failed.
 
 ```php
 $explainer = new \Ols\PhpRuler\Explainer\ExpressionExplainer($eval);
@@ -104,50 +104,48 @@ $result = $explainer->explain('a > 0 AND b < 10', ['a' => 5, 'b' => 20]);
 $result->passed;           // false
 $result->failures();       // [ExplainNode 'b < 10' — passed=false, leftValue=20, rightValue=10]
 $result->successes();      // [ExplainNode 'a > 0' — passed=true]
-$result->unresolved();     // combines missing() + errors() — tout ce qui a bloqué l'évaluation
+$result->unresolved();     // combines missing() + errors() — everything that blocked evaluation
 ```
 
-⚠️ **Ne pas utiliser de fonctions à effet de bord avec l'Explainer** — chaque fonction peut être appelée deux fois par occurrence dans une expression compound. Voir [explainer.md](explainer.md).
+⚠️ **Do not use side-effect functions with the Explainer** — each function may be called twice per occurrence in a compound expression. See [explainer.md](explainer.md).
 
-Voir [explainer.md](explainer.md).
+## Built-in functions
 
-## Fonctions built-in
-
-Arithmétique, chaînes, listes, dates, casting de types. Toutes surchargeables via `registerFunction()`.
+Arithmetic, strings, lists, dates, type casting. All overridable via `registerFunction()`.
 
 ```php
 // Casting
-int(3.7)          // 3 (troncature vers zéro)
+int(3.7)          // 3 (truncates toward zero)
 float('3.14')     // 3.14
 bool('true')      // true
 str(1.5)          // '1.5'
 
-// Maths
-round(3.14159, 2) // 3.14  (precision max : 14)
+// Math
+round(3.14159, 2) // 3.14  (max precision: 14)
 abs(-5)           // 5
-clamp(x, 0, 100)  // borne x dans [0, 100]
+clamp(x, 0, 100)  // clamps x to [0, 100]
 pow(2, 10)        // 1024
 
-// Chaînes
-upper(name)              // majuscules
+// Strings
+upper(name)              // uppercase
 contains(s, 'search')    // bool
-concat(first, ' ', last) // concaténation
+concat(first, ' ', last) // concatenation
 
-// Listes
-count(tags)       // nombre d'éléments (alias tableau-only de length())
-length(tags)      // idem, fonctionne aussi sur les strings
-sum(amounts)      // somme
-avg(scores)       // moyenne
+// Lists
+count(tags)       // number of elements (array-only alias of length())
+length(tags)      // same, also works on strings
+sum(amounts)      // sum
+avg(scores)       // average
 
-// Dates (formats : Y-m-d, Y-m-d H:i, Y-m-d H:i:s, et variantes ISO 8601 avec T)
+// Dates (formats: Y-m-d, Y-m-d H:i, Y-m-d H:i:s, and ISO 8601 variants with T)
 today()                         // '2026-01-15'
-dateDiff(today(), created_at)   // jours depuis création
-dateAdd(expiry, 30, 'day')      // ajouter 30 jours
+dateDiff(today(), created_at)   // days since creation
+dateAdd(expiry, 30, 'day')      // add 30 days
 ```
 
-Référence complète : [functions.md](functions.md).
+Full reference: [functions.md](functions.md).
 
-## Fonctions custom
+## Custom functions
 
 ```php
 $eval->registerFunction('discount', function(float $price, float $pct): float {
@@ -157,94 +155,94 @@ $eval->registerFunction('discount', function(float $price, float $pct): float {
 $eval->evaluate("discount(cart.total, 10)", ['cart' => ['total' => 100.0]]);  // 90.0
 ```
 
-## Cache et AST
+## Cache and AST
 
-Le cache LRU est automatique (défaut 500 entrées). Configurable via le constructeur :
+The LRU cache is automatic (default: 500 entries). Configurable via the constructor:
 
 ```php
-$eval = new ExpressionEvaluator(cacheMaxSize: 2000);  // cache plus grand
-$eval = new ExpressionEvaluator(cacheMaxSize: 0);     // cache désactivé
+$eval = new ExpressionEvaluator(cacheMaxSize: 2000);  // larger cache
+$eval = new ExpressionEvaluator(cacheMaxSize: 0);     // cache disabled
 ```
 
-Pour stocker un AST compilé en base (évite le parsing au prochain démarrage) :
+To store a compiled AST in a database (avoids re-parsing on next startup):
 
 ```php
-// Export : enveloppe JSON versionnée {"v":1,"ast":"..."}
+// Export: versioned JSON envelope {"v":1,"ast":"..."}
 $stored = $eval->exportAst('cart.total > threshold');
 
-// Import : valide la version + la structure + les cycles
+// Import: validates version + structure + cycles
 $ast  = $eval->importAst($stored);
 $eval->evaluateAst($ast, $context);
 ```
 
-⚠️ `importAst()` vérifie la version du format. Si la lib est mise à jour avec un changement de structure, les payloads stockés doivent être régénérés.
+⚠️ `importAst()` checks the format version. If the library is updated with a structural change, stored payloads must be regenerated.
 
-Voir [ast-management.md](ast-management.md).
+See [ast-management.md](ast-management.md).
 
-## Architecture : `Node` et traversée
+## Architecture: `Node` and traversal
 
-`Node` est une **interface vide** — intentionnellement. Pas de visitor pattern imposé : la traversée se fait par `instanceof` vers les classes concrètes (`BinaryNode`, `UnaryNode`, `LiteralNode`, `VariableNode`, `InNode`, `FunctionNode`, `TernaryNode`).
+`Node` is an **empty interface** — intentionally. No visitor pattern is imposed: traversal is done via `instanceof` against concrete classes (`BinaryNode`, `UnaryNode`, `LiteralNode`, `VariableNode`, `InNode`, `FunctionNode`, `TernaryNode`).
 
-Pourquoi ? Un visitor formel aurait imposé une méthode par type de nœud dans l'interface. Toute nouvelle classe `Node` aurait cassé les implémentations tierces. Pour une lib dont l'AST peut encore évoluer, c'est une contrainte disproportionnée.
+Why? A formal visitor would have required one method per node type in the interface. Any new `Node` class would have broken third-party implementations. For a library whose AST may still evolve, that is a disproportionate constraint.
 
-Pour une traversée custom, utilisez `getAst()` et inspectez par `instanceof` :
+For custom traversal, use `getAst()` and inspect via `instanceof`:
 
 ```php
 $ast = $eval->getAst('a > 0 AND b < 10');
-// Parcourir $ast par instanceof BinaryNode, VariableNode, etc.
+// Walk $ast using instanceof BinaryNode, VariableNode, etc.
 ```
 
-`extractVariables()` et `extractFunctions()` sont des utilitaires de traversée prêts à l'emploi.
+`extractVariables()` and `extractFunctions()` are ready-to-use traversal utilities.
 
-## Pièges courants
+## Common pitfalls
 
-### Précédence de `??` — plus basse que les comparaisons
+### `??` precedence — lower than comparisons
 
 ```php
-// ❌ Pas ce qu'on pense
+// ❌ Not what you'd expect
 $eval->evaluate('a ?? 0 > 100', ['a' => null]);
 // → null ?? (0 > 100) → null ?? false → false
 
-// ✅ Forme correcte
+// ✅ Correct form
 $eval->evaluate('(a ?? 0) > 100', ['a' => null]);
 // → (null ?? 0) > 100 → 0 > 100 → false
 ```
 
-### `NOT a ?? b` — NOT lie très fort
+### `NOT a ?? b` — NOT binds very tightly
 
 ```php
-// NOT a une précédence très haute (aligné sur PHP !)
-'NOT a ?? b'    →  '(NOT a) ?? b'    // PAS NOT (a ?? b)
-'NOT (a ?? b)'  →  forme correcte
+// NOT has very high precedence (aligned with PHP !)
+'NOT a ?? b'    →  '(NOT a) ?? b'    // NOT NOT (a ?? b)
+'NOT (a ?? b)'  →  correct form
 ```
 
 ## Exceptions
 
-Toutes dérivent de `Ols\PhpRuler\Exception\EvaluatorException` (`\RuntimeException`).
+All derive from `Ols\PhpRuler\Exception\EvaluatorException` (`\RuntimeException`).
 
 ```
 EvaluatorException
-  ├── SyntaxErrorException    — lex/parse (propriété $position)
-  ├── TypeErrorException      — typage runtime
-  ├── UnknownVariableException — variable absente (propriété $variablePath)
-  └── CircularContextException — contexte circulaire (describeContext)
+  ├── SyntaxErrorException     — lex/parse (property $position)
+  ├── TypeErrorException       — runtime type error
+  ├── UnknownVariableException — missing variable (property $variablePath)
+  └── CircularContextException — circular context (describeContext)
 ```
 
-Les messages sont en **anglais**, intentionnellement. Le point d'extension pour un backoffice francophone : utiliser le type d'exception et les propriétés structurées (`$variablePath`, `$position`) pour composer des messages localisés côté appelant.
+Exception messages are in **English**, intentionally. The extension point for a localized back-office: use the exception type and its structured properties (`$variablePath`, `$position`) to compose localized messages on the caller side.
 
-Voir [exceptions.md](exceptions.md).
+See [exceptions.md](exceptions.md).
 
-## Documentation complète
+## Full documentation
 
-| Fichier | Contenu |
+| File | Contents |
 |---|---|
-| [language-reference.md](language-reference.md) | Syntaxe, opérateurs, précédences, pièges |
-| [evaluate.md](evaluate.md) | Mode strict, API, comportements |
-| [evaluate-safe.md](evaluate-safe.md) | Mode safe, SafeResult, short-circuits |
-| [explainer.md](explainer.md) | Diagnostic nœud par nœud |
-| [functions.md](functions.md) | Catalogue des built-in, fonctions custom |
-| [exceptions.md](exceptions.md) | Hiérarchie d'exceptions, politique de propagation |
-| [ast-management.md](ast-management.md) | Cache, export/import, limites et constantes |
-| [context.md](context.md) | Résolution des variables, dot-notation |
-| [alias-resolver.md](alias-resolver.md) | Traduction chemin ↔ alias humain |
+| [language-reference.md](language-reference.md) | Syntax, operators, precedences, pitfalls |
+| [evaluate.md](evaluate.md) | Strict mode, API, behaviors |
+| [evaluate-safe.md](evaluate-safe.md) | Safe mode, SafeResult, short-circuits |
+| [explainer.md](explainer.md) | Node-by-node diagnostics |
+| [functions.md](functions.md) | Built-in catalogue, custom functions |
+| [exceptions.md](exceptions.md) | Exception hierarchy, propagation policy |
+| [ast-management.md](ast-management.md) | Cache, export/import, limits and constants |
+| [context.md](context.md) | Variable resolution, dot-notation |
+| [alias-resolver.md](alias-resolver.md) | Path ↔ human alias translation |
 | [static-analysis.md](static-analysis.md) | extractVariables, extractFunctions, validate |
