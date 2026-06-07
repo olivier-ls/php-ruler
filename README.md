@@ -6,8 +6,7 @@
 [![License](https://img.shields.io/github/license/olivier-ls/php-ruler)](LICENSE)
 [![Downloads](https://img.shields.io/packagist/dt/ols/php-ruler)](https://packagist.org/packages/ols/php-ruler)
 
-A transparent expression & rule evaluator in pure PHP.
-Strict typing, no dependencies, and an explain mode that shows exactly why a rule passed or failed.
+Evaluate business rules stored as strings — with strict typing and a node-by-node trace of why each rule passed or failed.
 
 `Strict typing` · `Safe mode` · `Full evaluation trace` · `Variable aliasing` · `Zero dependencies` · `PHP 8.1+`
 
@@ -189,31 +188,56 @@ $resolver->expressionToHuman("cart.total > 100"); // "cart amount > 100"
 
 ---
 
-## What you can write
+## What you can express
 
-- **Types** — integers, floats, single/double-quoted strings, `true` / `false`, `null`, and lists
-  (`['a', 'b', 'c']`).
-- **Operators** — arithmetic (`+ - * / %`); comparison (`=`, `!=`, `<`, `<=`, `>`, `>=` — note `=`
-  is equality); logical `AND` / `OR` / `NOT`; membership `IN` / `NOT IN`; null-coalescing `??`;
-  and the ternary `? :`.
-- **Variables** — dot-notation paths into the context (`customer.address.city`).
-- **Functions** — math (`round`, `floor`, `ceil`, `abs`, `min`, `max`, `clamp`, `pow`, `sqrt`),
-  strings (`length`, `upper`, `lower`, `trim`, `contains`, `startsWith`, `endsWith`, `substr`),
-  dates (`today`, `now`, `year`, `month`, `day`, `dateDiff`, `dateAdd`, …), and casts (`int`,
-  `float`, `bool`, `str`) — plus any custom function you register.
+From a simple condition to a multi-criteria rule combining functions, dates, and fallback logic:
 
-A few examples:
+```php
+// Basic comparison
+"cart.total > 100"
+"user.role = 'admin'"
 
-```text
-product.category IN ['clothing', 'shoes', 'boots']
-customer.group NOT IN ['blocked', 'banned']
-customer.vip = true ? 'premium' : 'standard'
-customer.discount ?? 0
-dateDiff(today(), order.date) > 0
+// Membership
+"product.category IN ['clothing', 'shoes', 'boots']"
+"article.status NOT IN ['draft', 'archived']"
+
+// Combining conditions
+"cart.total > 100 AND customer.group = 'vip'"
+"article.author = user.id OR user.role = 'editor'"
+
+// Null-coalescing and ternary
+"customer.discount ?? 0"
+"(customer.score ?? 0) >= 50"
+"user.plan = 'pro' ? 'full_access' : 'limited'"
+
+// Functions — math, strings, dates
+"round(cart.total * 1.2, 2) < 500"
+"dateDiff(today(), article.published_at) <= 30"
+"upper(customer.country) IN ['FR', 'BE', 'CH']"
+
+// Multi-criteria, realistic rules
+"customer.group = 'vip' AND cart.total >= 100 AND cart.country IN ['FR', 'BE', 'CH']"
+"article.status = 'published' AND dateDiff(today(), article.published_at) <= 90 AND article.author = user.id"
+"(customer.score ?? 0) >= 50 AND NOT customer.country IN ['IR', 'KP'] AND dateAdd(user.created_at, 30, 'day') < today()"
+
+// Not just boolean rules — expressions can return values
+"customer.vip ? round(cart.total * 0.85, 2) : cart.total"
+// → float: the discounted price, or the original
+
+"clamp((customer.score ?? 0) / 10, 0, 100)"
+// → a numeric score between 0 and 100
+
+"dateDiff(today(), subscription.expires_at) <= 0 ? 'expired' : concat('expires in ', str(dateDiff(today(), subscription.expires_at)), ' days')"
+// → string: 'expired' or 'expires in 14 days'
+
+// The same rules, with human-readable aliases registered via AliasResolver:
+// "vip customer AND cart amount >= 100 AND shipping country IN ['FR', 'BE', 'CH']"
+
+// You can also register custom functions and call them directly in expressions:
+// "is_eligible(customer.score, plan.threshold) AND quota.remaining > 0"
 ```
 
-The full grammar, the operator precedence table (including the deliberate placement of `??`), and
-the strict-typing rules are documented in
+All types, operators, functions, and precedence rules are in
 [`docs/language-reference.md`](docs/language-reference.md) and
 [`docs/functions.md`](docs/functions.md).
 
